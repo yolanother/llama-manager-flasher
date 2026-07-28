@@ -1,0 +1,133 @@
+<!--
+  Llama Manager Flasher — project README.
+
+  Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+  governed by the LICENSE file in the repository root.
+
+  User- and developer-facing documentation for the standalone appliance-image
+  flasher: what it does, how to run it per OS (including elevation and
+  unsigned-binary caveats), how to build and test it, and how the DoubTech CI
+  pipeline packages the three installers.
+-->
+
+# Llama Manager Flasher
+
+A branded, standalone tool that puts the **Llama Manager appliance** onto a USB
+stick or microSD card. Pick your platform, and the app downloads the **latest**
+appliance image, verifies its SHA-256 checksum, writes it to the drive with
+[etcher-sdk](https://github.com/balena-io-modules/etcher-sdk) (the Balena
+Etcher engine), and verifies the write before telling you it is safe to boot
+from.
+
+Supported appliance platforms:
+
+| Platform | Channel | Arch | Source |
+|---|---|---|---|
+| AMD Ryzen AI | **Stable** | amd64 | `llama-manager.doubtech.ai/downloads` (SHA256SUMS) |
+| NVIDIA DGX Spark | **EXPERIMENTAL** — unvalidated on hardware | arm64 | `llama-manager.doubtech.ai/downloads-nvidia-spark` (release.json) |
+
+## Download
+
+Grab the installer for your OS (versionless "latest" names, linked from the
+Llama Manager site):
+
+- Windows: `LlamaManagerFlasher-win-x64-portable.exe`
+- macOS: `LlamaManagerFlasher-mac-universal.dmg`
+- Linux: `LlamaManagerFlasher-linux-x86_64.AppImage`
+
+## Usage
+
+1. **Choose your platform** — AMD Ryzen AI (stable) or NVIDIA DGX Spark
+   (experimental; expect rough edges, it has not been validated on hardware).
+2. **Choose the target drive** — only removable USB / SD devices ≤ 2 TiB are
+   listed; system disks are filtered out and re-checked in the privileged
+   process right before writing.
+3. **Confirm** — type the device path to confirm the destructive write.
+4. Wait through **download → checksum → write → verify**. Downloads are cached
+   (`image-cache/` under the app's user-data dir), resume over HTTP Range on
+   retry, and are deleted on checksum mismatch.
+5. When verification finishes the drive is unmounted and safe to unplug.
+
+### Elevation / OS notes
+
+Raw block-device writes need elevated rights:
+
+- **Windows** — launch normally; when flashing without admin rights the app
+  offers **Relaunch elevated** (UAC prompt via `Start-Process -Verb RunAs`).
+- **Linux** — the app offers **Relaunch elevated** through `pkexec` (polkit).
+  If pkexec is unavailable, run the AppImage with
+  `sudo ./LlamaManagerFlasher-linux-x86_64.AppImage --no-sandbox`.
+  (`--no-sandbox` is required when running Electron as root.)
+- **macOS** — no relaunch needed: etcher-sdk opens devices through Apple's
+  `authopen(1)`, which prompts for authorization per device.
+
+### Unsigned-binary caveats (until signing credentials exist)
+
+- **Windows SmartScreen** will warn that the portable exe is unrecognized —
+  choose "More info → Run anyway".
+- **macOS Gatekeeper** will block the unnotarized app — right-click → Open, or
+  allow it under System Settings → Privacy & Security. Notarization is wired
+  into the build (`scripts/notarize.cjs`) and activates automatically once
+  `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` are provided
+  to the CI mac node.
+- **Linux** AppImages are unaffected; mark it executable (`chmod +x`) and run.
+
+This is a portable one-shot tool — it has **no auto-updater** by design.
+The app version lives in the release tag and About line, never in the
+artifact filename.
+
+## Building from source
+
+Requires Node 22+ and pnpm 10+.
+
+```bash
+pnpm install               # native deps build against your OS
+pnpm test                  # vitest unit tests (manifest / safety / artifacts)
+pnpm typecheck             # strict tsc across main / preload / renderer
+pnpm build                 # tsc (main+preload) + vite (renderer)
+pnpm start                 # run the built app
+pnpm package:linux         # dist-installer/LlamaManagerFlasher-linux-x86_64.AppImage
+pnpm package:win           # (on Windows) ...-win-x64-portable.exe
+pnpm package:mac           # (on macOS)   ...-mac-universal.dmg
+pnpm gen-icons             # regenerate build/icon.{png,ico,icns} from icon.svg
+```
+
+### The `@ronomon/direct-io` patch
+
+`patches/ronomon-direct-io-v8-cage.patch` (wired via
+`pnpm.patchedDependencies`) is **required**. It does two things:
+
+1. **V8 memory cage** — Electron ≥ 21 forbids `napi_create_external_buffer`;
+   the patch switches the aligned-I/O buffer allocation to
+   `napi_create_buffer_copy`. Without it, writes crash at runtime.
+2. **Build fix under pnpm** — pnpm stores patched packages in a directory
+   containing `patch_hash=`; the `=` breaks the make rules gyp generates for
+   the package's `copy` target. The patch drops that target, points `main` at
+   `build/Release/binding.node`, and neutralizes the `postinstall:
+   node-gyp clean` that would have deleted the binary.
+
+## CI
+
+`.doubtech-ci.yml` (DoubTech CI, schema v1) runs on pushes to `main` across
+linux / mac / windows nodes:
+
+- **test** — `pnpm install --frozen-lockfile` + `pnpm test:ci` (JUnit XML at
+  `reports/junit/test.xml`, aggregated via `testReports`).
+- **build** — `node ci/build.mjs` (strict typecheck + production build).
+- **package** — `node ci/package.mjs` dispatches to
+  `ci/package-{linux,mac,windows}.mjs`; each emits exactly one versionless
+  installer into `dist-installer/` and fails if the expected filename is
+  missing. Collected via the `dist-installer/LlamaManagerFlasher-*` glob.
+
+Every `ci/` script is a plain Node script, runnable locally from a clean
+checkout — no absolute paths, version derived from `package.json`.
+
+## Architecture
+
+- `src/main/` — Electron main process: manifest fetch/normalize, device
+  scanning, resumable verified downloads, etcher-sdk flash with verify,
+  elevation. All safety rails enforced here.
+- `src/preload/` — the narrow contextBridge IPC surface (`window.llamaFlasher`).
+- `src/renderer/` — React wizard UI (dark frosted-glass, keyboard accessible).
+- `src/shared/` — pure logic (manifest normalization, device safety rails,
+  artifact-name mapping) with unit tests under `tests/`.

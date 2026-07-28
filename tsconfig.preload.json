@@ -1,0 +1,24 @@
+{
+  // Llama Manager Flasher — preload TypeScript config.
+  // Preload is CommonJS (Electron contextIsolation needs require() at module
+  // top level). Its own tsconfig keeps the main process's ESM emit settings
+  // from leaking into the preload's .cjs output.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "outDir": "dist/preload",
+    "rootDir": "src/preload",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true
+  },
+  "include": ["src/preload/**/*.cts"]
+}

@@ -1,0 +1,304 @@
+/*
+  Llama Manager Flasher — renderer stylesheet.
+
+  Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+  governed by the LICENSE file in the repository root.
+
+  Dark frosted-glass aesthetic matching the Llama Manager product family:
+  near-black base, glass panels with backdrop blur and a top-edge highlight,
+  AMD ember (#ed1c24 → #ffa02f) and NVIDIA green (#76b900) platform accents.
+  Fonts are the local Space Grotesk / Inter when installed, falling back to
+  the system UI stack — no CDN requests, the app must work offline.
+*/
+
+:root {
+  --bg: #070708;
+  --panel: rgba(255, 255, 255, 0.045);
+  --panel-border: rgba(255, 255, 255, 0.09);
+  --panel-highlight: rgba(255, 255, 255, 0.14);
+  --text: #f2f0ec;
+  --muted: #9a968f;
+  --amber: #ffa02f;
+  --amd: #ed1c24;
+  --nvidia: #76b900;
+  --danger: #ff4d4f;
+  --ok: #22c55e;
+  --font: "Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 500px at 80% -10%, rgba(237, 28, 36, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(255, 160, 47, 0.07), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 26px 26px;
+  gap: 18px;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
+.brand .sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+
+.steps {
+  display: flex;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.steps li {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+}
+.steps li.active {
+  color: #0a0a0a;
+  background: linear-gradient(135deg, var(--amd), var(--amber));
+  border-color: transparent;
+  font-weight: 700;
+}
+
+/* ── Panels (frosted glass) ─────────────────────────────────── */
+
+.stage { flex: 1; display: grid; place-items: center; }
+
+.panel {
+  width: min(720px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  padding: 26px 28px;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    inset 0 1px 0 var(--panel-highlight),
+    0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.panel h2 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+/* ── Platform cards ─────────────────────────────────────────── */
+
+.platform-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 20px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
+}
+.card:hover:not(:disabled), .card:focus-visible {
+  transform: translateY(-2px);
+  outline: none;
+}
+.card:disabled { opacity: 0.6; cursor: wait; }
+.card strong { font-size: 17px; }
+.card-sub { color: var(--muted); font-size: 12px; }
+.card-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+.card-amd:hover:not(:disabled), .card-amd:focus-visible {
+  border-color: rgba(237, 28, 36, 0.65);
+  background: linear-gradient(160deg, rgba(237, 28, 36, 0.16), rgba(255, 160, 47, 0.07)), var(--panel);
+}
+.card-nvidia:hover:not(:disabled), .card-nvidia:focus-visible {
+  border-color: rgba(118, 185, 0, 0.65);
+  background: linear-gradient(160deg, rgba(118, 185, 0, 0.14), rgba(118, 185, 0, 0.04)), var(--panel);
+}
+
+.chip {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.chip.inline { margin-left: 8px; vertical-align: middle; }
+.chip-stable { background: rgba(34, 197, 94, 0.16); color: var(--ok); }
+.chip-exp { background: rgba(118, 185, 0, 0.18); color: var(--nvidia); }
+
+/* ── Drive picker ───────────────────────────────────────────── */
+
+.drive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.drive {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.drive span { color: var(--muted); font-size: 12px; }
+.drive .mounts { font-size: 11px; }
+.drive.selected, .drive:focus-visible {
+  border-color: var(--amber);
+  background: linear-gradient(160deg, rgba(255, 160, 47, 0.12), transparent), var(--panel);
+  outline: none;
+}
+.empty { color: var(--muted); font-size: 13px; padding: 18px 6px; text-align: center; }
+
+/* ── Confirm ────────────────────────────────────────────────── */
+
+.warn-box {
+  border: 1px solid rgba(255, 77, 79, 0.45);
+  background: rgba(255, 77, 79, 0.09);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.warn-box.elev { border-color: rgba(255, 160, 47, 0.5); background: rgba(255, 160, 47, 0.08); }
+.warn-box p { margin: 0 0 8px; }
+.warn-box p:last-child { margin-bottom: 0; }
+
+.confirm-label { display: block; margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
+.confirm-label code { color: var(--amber); user-select: text; }
+.confirm-input {
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 14px;
+}
+.confirm-input:focus { outline: none; border-color: var(--danger); }
+
+/* ── Buttons ────────────────────────────────────────────────── */
+
+.actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.primary, .danger, .ghost {
+  padding: 10px 22px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+.primary {
+  background: linear-gradient(135deg, var(--amd), var(--amber));
+  color: #0a0a0a;
+}
+.danger { background: var(--danger); color: #14060a; }
+.ghost { background: transparent; color: var(--text); border-color: var(--panel-border); }
+.primary:hover:not(:disabled), .danger:hover:not(:disabled), .ghost:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+.primary:disabled, .danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.primary:focus-visible, .danger:focus-visible, .ghost:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+}
+
+/* ── Progress ───────────────────────────────────────────────── */
+
+.phase-row { display: flex; gap: 6px; margin: 14px 0 16px; flex-wrap: wrap; }
+.phase {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+}
+.phase.active {
+  color: #0a0a0a;
+  background: linear-gradient(135deg, var(--amd), var(--amber));
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.bar {
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--amd), var(--amber));
+  transition: width 0.25s ease;
+}
+.progress-detail { margin: 10px 0 4px; font-size: 13px; color: var(--text); }
+
+/* ── Done ───────────────────────────────────────────────────── */
+
+.done { text-align: center; }
+.done-mark {
+  width: 56px;
+  height: 56px;
+  margin: 4px auto 12px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  color: #06130a;
+  background: var(--ok);
+}
+.done .actions { justify-content: center; }

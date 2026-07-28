@@ -1,0 +1,112 @@
+{
+  "name": "llama-manager-flasher",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Llama Manager Flasher — branded, standalone appliance-image flasher. Downloads the latest Llama Manager appliance ISO (AMD Ryzen stable / NVIDIA DGX Spark experimental), sha256-verifies it, and writes it to USB / microSD with post-write verification.",
+  "author": "Doubling Technologies (DoubTech.ai)",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/main/index.js",
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "vite",
+    "build:renderer": "vite build",
+    "build:main": "tsc -p tsconfig.main.json && tsc -p tsconfig.preload.json",
+    "build": "pnpm build:main && pnpm build:renderer",
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.preload.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "test": "vitest run",
+    "test:ci": "vitest run --reporter=default --reporter=junit --outputFile.junit=reports/junit/test.xml",
+    "gen-icons": "node scripts/gen-icons.mjs",
+    "package": "pnpm build && electron-builder",
+    "package:win": "pnpm build && electron-builder --win",
+    "package:mac": "pnpm build && electron-builder --mac",
+    "package:linux": "pnpm build && electron-builder --linux"
+  },
+  "dependencies": {
+    "etcher-sdk": "^9.0.13"
+  },
+  "devDependencies": {
+    "@electron/notarize": "^2.5.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/node": "^22.5.4",
+    "@types/react": "^18.3.5",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.7",
+    "png2icons": "^2.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.8",
+    "vitest": "^2.1.9"
+  },
+  "build": {
+    "appId": "ai.doubtech.llamamanager.flasher",
+    "productName": "Llama Manager Flasher",
+    "copyright": "Copyright © 2026 Doubling Technologies",
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "directories": {
+      "output": "dist-installer",
+      "buildResources": "build"
+    },
+    "afterSign": "scripts/notarize.cjs",
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "LlamaManagerFlasher-win-x64-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "artifactName": "LlamaManagerFlasher-mac-universal.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "artifactName": "LlamaManagerFlasher-linux-x86_64.${ext}"
+    }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ronomon/direct-io",
+      "drivelist",
+      "electron",
+      "esbuild",
+      "lzma-native",
+      "mountutils",
+      "usb",
+      "winusb-driver-generator",
+      "xxhash-addon"
+    ],
+    "patchedDependencies": {
+      "@ronomon/direct-io@3.0.1": "patches/ronomon-direct-io-v8-cage.patch"
+    }
+  }
+}

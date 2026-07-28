@@ -1,0 +1,8 @@
+# Llama Manager Flasher — ignore rules.
+node_modules/
+dist/
+dist-installer/
+reports/
+*.log
+.DS_Store
+.vite/

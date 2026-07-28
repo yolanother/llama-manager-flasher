@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Llama Manager Flasher — macOS hardened-runtime entitlements.
+
+  Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+  governed by the LICENSE file in the repository root.
+
+  Grants the entitlements the flasher needs under the hardened runtime:
+  JIT + unsigned executable memory for Electron/V8, library validation
+  disabled so the native etcher-sdk modules (drivelist, usb, direct-io)
+  load, and USB/removable-device access for raw block-device writes via
+  authopen(1).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <key>com.apple.security.device.usb</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+  </dict>
+</plist>
