@@ -13,9 +13,9 @@
 
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { run, ensureDeps, repoRoot } from './util.mjs';
+import { run, ensureFullDeps, repoRoot } from './util.mjs';
 
-ensureDeps();
+ensureFullDeps();
 run('pnpm build');
 run('pnpm exec electron-builder --mac --publish never');
 

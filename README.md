@@ -111,16 +111,40 @@ pnpm gen-icons             # regenerate build/icon.{png,ico,icns} from icon.svg
 `.doubtech-ci.yml` (DoubTech CI, schema v1) runs on pushes to `main` across
 linux / mac / windows nodes:
 
-- **test** — `pnpm install --frozen-lockfile` + `pnpm test:ci` (JUnit XML at
-  `reports/junit/test.xml`, aggregated via `testReports`).
-- **build** — `node ci/build.mjs` (strict typecheck + production build).
-- **package** — `node ci/package.mjs` dispatches to
-  `ci/package-{linux,mac,windows}.mjs`; each emits exactly one versionless
-  installer into `dist-installer/` and fails if the expected filename is
-  missing. Collected via the `dist-installer/LlamaManagerFlasher-*` glob.
+- **test** — `pnpm install --frozen-lockfile --ignore-scripts` + `pnpm
+  test:ci` (JUnit XML at `reports/junit/test.xml`, aggregated via
+  `testReports`).
+- **build** — `node ci/build.mjs` (strict typecheck + production build; also
+  installs script-less when needed).
+- **package** — `node ci/preflight.mjs` (toolchain check / best-effort
+  auto-install, see below) then `node ci/package.mjs`, which dispatches to
+  `ci/package-{linux,mac,windows}.mjs`; each runs the FULL scripted install,
+  builds, and emits exactly one versionless installer into `dist-installer/`,
+  failing if the expected filename is missing. Collected via the
+  `dist-installer/LlamaManagerFlasher-*` glob.
 
 Every `ci/` script is a plain Node script, runnable locally from a clean
 checkout — no absolute paths, version derived from `package.json`.
+
+### Phase-scoped installs (why `--ignore-scripts`)
+
+The test and build phases run only vitest / tsc / vite — pure TypeScript
+tooling with no native code. Installing with `--ignore-scripts` skips the
+native gyp builds (`@ronomon/direct-io`, `drivelist`, …) and the Electron
+binary download entirely, so those phases pass on nodes that have **no
+C/C++ toolchain at all**. Only the package phase compiles native modules
+(electron-builder rebuilds them against Electron's headers via
+`@electron/rebuild`), so only the package phase does a full scripted install
+— and it is gated by `ci/preflight.mjs`, which verifies the toolchain first
+and attempts a best-effort auto-install where the platform permits.
+
+### CI node requirements
+
+| Platform | Required on the node | Notes |
+|---|---|---|
+| linux | **docker** (preferred) — the package build then runs isolated inside `node:22-bookworm` and needs no host toolchain. Without docker: `build-essential` + `python3`. | libfuse is NOT needed to *build* an AppImage, only to run one. `ci/package-linux.mjs --no-docker` forces the direct host build. |
+| windows | **Visual Studio 2022 Build Tools** (C++ workload) + **Python 3**. | `ci/preflight.mjs` auto-installs best-effort via `choco` (or `winget`) when present + elevated; otherwise it fails with the exact install commands. Docker on Windows runs *Linux* containers and cannot build Windows Electron targets — a host toolchain is mandatory. |
+| mac | **Xcode Command Line Tools** (`xcode-select --install`) + `python3`. | No unattended CLT install exists; preflight fails with instructions until an operator installs it. Signing/notarization additionally need `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`. |
 
 ## Architecture
 

@@ -5,8 +5,10 @@
 //
 // Runs the strict TypeScript typecheck across all three process configs
 // (main / preload / renderer) and then the full production build (tsc emit +
-// Vite renderer bundle). Runnable locally with `node ci/build.mjs` and on a
-// clean CI checkout — dependencies are installed if missing.
+// Vite renderer bundle). Pure TS tooling — deps are installed script-less
+// (--ignore-scripts) when missing, so this phase never needs a native
+// toolchain. Runnable locally with `node ci/build.mjs` and on a clean CI
+// checkout.
 
 import { run, ensureDeps } from './util.mjs';
 
