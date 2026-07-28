@@ -48,14 +48,18 @@ if (!noDocker) {
     // prompt is disabled so the pinned packageManager pnpm fetches silently.
     const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
     const gid = typeof process.getgid === 'function' ? process.getgid() : 0;
+    // NOTE: \\$PATH keeps the host shell from expanding $PATH — it must be
+    // expanded by bash INSIDE the container. CI=true lets pnpm replace a
+    // node_modules dir installed with different settings (e.g. a host
+    // --ignore-scripts install) without prompting for a TTY.
     const inner = 'mkdir -p /tmp/home /tmp/bin' +
       ' && corepack enable --install-directory /tmp/bin pnpm' +
-      ' && export PATH=/tmp/bin:$PATH' +
+      ' && export PATH=/tmp/bin:\\$PATH' +
       ' && pnpm install --frozen-lockfile' +
       ' && node ci/package-linux.mjs --no-docker';
     run(
       `docker run --rm -u ${uid}:${gid}` +
-      ' -e HOME=/tmp/home -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0' +
+      ' -e HOME=/tmp/home -e CI=true -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0' +
       ` -v "${repoRoot}":/w -w /w node:22-bookworm` +
       ` bash -lc "${inner}"`,
     );
