@@ -29,10 +29,10 @@
 // error output says exactly what to install. Pure Node, no POSIX-isms —
 // runnable as `node ci/preflight.mjs` on any of the three CI platforms.
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { probe } from './util.mjs';
+import { probe, repoRoot } from './util.mjs';
 
 /**
  * Detects a usable Docker engine and reports the container OS type.
@@ -52,22 +52,87 @@ export function detectDocker() {
 }
 
 /**
- * Locates a Python interpreter suitable for node-gyp.
+ * Interrogates one Python invocation for its REAL absolute interpreter path
+ * and version in a single call. Asking Python for `sys.executable` (a) proves
+ * it is a genuine working interpreter rather than the Windows Store
+ * app-execution-alias stub (which produces no usable output / opens the Store
+ * in non-interactive contexts), and (b) yields an absolute path we can pin so
+ * node-gyp works even when the CI agent's PATH is stale.
  *
- * @returns {string} A human-readable version string (e.g. "Python 3.12.4"),
- *   or empty string when no working interpreter was found. Guards against
- *   the Windows Store `python.exe` stub, which exits non-zero.
+ * @param {string} cmd Executable to invoke (a bare name or an absolute path).
+ * @param {string[]} preArgs Leading args (e.g. `['-3']` for the `py` launcher).
+ * @returns {{ exe: string, version: string } | null} Resolved interpreter, or null.
+ */
+function pythonInfo(cmd, preArgs = []) {
+  const r = probe(cmd, [...preArgs, '-c',
+    'import sys;print(sys.executable+"|"+sys.version.split()[0])']);
+  const out = (r.stdout || '').trim();
+  if (r.ok && out.includes('|')) {
+    const [exe, ver] = out.split('|');
+    if (exe && existsSync(exe) && /^\d+\.\d+/.test(ver)) return { exe, version: `Python ${ver}` };
+  }
+  return null;
+}
+
+/**
+ * Locates a real Python interpreter suitable for node-gyp, robust to a stale
+ * agent PATH and the Windows Store stub. Tries, in order: the `py` launcher
+ * (always on PATH when Python is installed), `python3`/`python` on PATH, and
+ * finally well-known install directories discovered directly on disk.
+ *
+ * @returns {{ exe: string, version: string } | null} The resolved interpreter, or null.
  */
 function findPython() {
-  for (const [cmd, args] of [
-    ['python3', ['--version']],
-    ['python', ['--version']],
-    ['py', ['-3', '--version']],
-  ]) {
-    const r = probe(cmd, args);
-    if (r.ok && /^Python \d/.test(r.stdout || r.stderr)) return r.stdout || r.stderr;
+  for (const [cmd, pre] of [['py', ['-3']], ['python3', []], ['python', []]]) {
+    const info = pythonInfo(cmd, pre);
+    if (info) return info;
   }
-  return '';
+  // PATH may be stale (agent launched before Python was installed) — probe the
+  // canonical install roots directly for a `Python3x\python.exe`.
+  const roots = [];
+  const la = process.env.LOCALAPPDATA;
+  const pf = process.env.ProgramFiles;
+  const pfx = process.env['ProgramFiles(x86)'];
+  if (la) roots.push(path.join(la, 'Programs', 'Python'));
+  if (pf) roots.push(path.join(pf, 'Python'), pf);
+  if (pfx) roots.push(pfx);
+  roots.push('C:\\');
+  for (const root of roots) {
+    let names = [];
+    try { names = readdirSync(root); } catch { continue; }
+    for (const name of names) {
+      if (!/^Python3/i.test(name)) continue;
+      const exe = path.join(root, name, 'python.exe');
+      if (existsSync(exe)) {
+        const info = pythonInfo(exe);
+        if (info) return info;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Pins node-gyp's Python interpreter to an absolute path by writing a `python`
+ * entry into a project-root `.npmrc`. Preflight and the package build run as
+ * SEPARATE processes, so an env var set here would not survive; `.npmrc` is
+ * read by pnpm/npm and honored by node-gyp in the subsequent package step,
+ * making the native build immune to a stale agent PATH. Idempotent.
+ *
+ * @param {string} exe Absolute path to a real python.exe.
+ */
+function pinPythonForNodeGyp(exe) {
+  const npmrc = path.join(repoRoot, '.npmrc');
+  let body = '';
+  try { body = readFileSync(npmrc, 'utf8'); } catch { /* none yet */ }
+  const line = `python=${exe.replace(/\\/g, '/')}`;
+  const next = body
+    .split(/\r?\n/)
+    .filter((l) => l && !/^python=/.test(l))
+    .concat(line)
+    .join('\n') + '\n';
+  writeFileSync(npmrc, next);
+  console.log(`[preflight] pinned node-gyp python -> ${exe} (via .npmrc)`);
 }
 
 /**
@@ -114,8 +179,8 @@ function findVsBuildTools() {
 function preflightWindows() {
   let vs = findVsBuildTools();
   let py = findPython();
-  console.log(`[preflight] windows: VS Build Tools ${vs ? `found (${vs})` : 'MISSING'}; Python ${py ? `found (${py})` : 'MISSING'}`);
-  if (vs && py) return;
+  console.log(`[preflight] windows: VS Build Tools ${vs ? `found (${vs})` : 'MISSING'}; Python ${py ? `found (${py.version} @ ${py.exe})` : 'MISSING'}`);
+  if (vs && py) { pinPythonForNodeGyp(py.exe); return; }
 
   // Best-effort auto-install. choco first (single command covers both), then
   // winget equivalents. Both need an elevated shell to actually succeed —
@@ -149,6 +214,7 @@ function preflightWindows() {
   py = findPython();
   if (vs && py) {
     console.log('[preflight] auto-install succeeded; toolchain now present.');
+    pinPythonForNodeGyp(py.exe);
     return;
   }
   console.error(
@@ -157,8 +223,12 @@ function preflightWindows() {
     (vs ? '' : '    - Visual Studio 2022 Build Tools with the "Desktop development with C++"\n' +
                '      workload:  choco install -y visualstudio2022buildtools visualstudio2022-workload-vctools\n' +
                '      (or winget install Microsoft.VisualStudio.2022.BuildTools with the VCTools workload)\n') +
-    (py ? '' : '    - Python 3:  choco install -y python   (or winget install Python.Python.3.12)\n') +
-    '  Run the installs from an ELEVATED shell, then re-run this build.\n' +
+    (py ? '' : '    - Python 3:  install from python.org (tick "Add to PATH") or the Store,\n' +
+               '      then RESTART the DoubTech CI node agent. If Python IS installed but\n' +
+               '      still shows MISSING here, the agent has a stale PATH from before the\n' +
+               '      install — restarting the agent is the fix (this preflight also probes\n' +
+               '      the py launcher + known install dirs, so a restart usually suffices).\n') +
+    '  Run any installs from an ELEVATED shell, then re-run this build.\n' +
     '  Note: docker on Windows runs Linux containers and CANNOT build Windows\n' +
     '  Electron targets — a host toolchain is required.');
   process.exit(1);
@@ -172,7 +242,7 @@ function preflightWindows() {
 function preflightMac() {
   const clt = probe('xcode-select', ['-p']);
   const py = findPython();
-  console.log(`[preflight] mac: Xcode CLT ${clt.ok ? `found (${clt.stdout})` : 'MISSING'}; Python ${py ? `found (${py})` : 'MISSING'}`);
+  console.log(`[preflight] mac: Xcode CLT ${clt.ok ? `found (${clt.stdout})` : 'MISSING'}; Python ${py ? `found (${py.version})` : 'MISSING'}`);
   if (clt.ok && py) return;
   console.error(
     '[preflight] FATAL: macOS native toolchain missing — the package phase compiles\n' +
@@ -199,7 +269,7 @@ function preflightLinux() {
   const cc = probe('cc', ['--version']).ok || probe('gcc', ['--version']).ok;
   const make = probe('make', ['--version']).ok;
   const py = findPython();
-  console.log(`[preflight] linux host: cc ${cc ? 'found' : 'MISSING'}; make ${make ? 'found' : 'MISSING'}; Python ${py ? `found (${py})` : 'MISSING'}`);
+  console.log(`[preflight] linux host: cc ${cc ? 'found' : 'MISSING'}; make ${make ? 'found' : 'MISSING'}; Python ${py ? `found (${py.version})` : 'MISSING'}`);
   if (cc && make && py) return;
   console.error(
     '[preflight] FATAL: Linux native toolchain missing and docker unavailable.\n' +
