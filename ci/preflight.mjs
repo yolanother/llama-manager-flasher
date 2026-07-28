@@ -82,11 +82,45 @@ function pythonInfo(cmd, preArgs = []) {
  *
  * @returns {{ exe: string, version: string } | null} The resolved interpreter, or null.
  */
+/**
+ * Discovers installed Pythons via the Windows registry (PEP 514), independent
+ * of PATH. Covers the case a bare-PATH probe cannot: a Microsoft Store Python
+ * (or any install) present on a CI agent whose PATH is stale from before the
+ * install. Reads `HK{CU,LM}\Software\Python\**` for `ExecutablePath` /
+ * `InstallPath` and validates each candidate via {@link pythonInfo}.
+ *
+ * @returns {{ exe: string, version: string } | null} Resolved interpreter, or null.
+ */
+function findPythonViaRegistry() {
+  if (process.platform !== 'win32') return null;
+  for (const hive of ['HKCU', 'HKLM']) {
+    const r = probe('reg', ['query', `${hive}\\Software\\Python`, '/s']);
+    if (!r.ok || !r.stdout) continue;
+    const candidates = [];
+    for (const line of r.stdout.split(/\r?\n/)) {
+      let m = line.match(/\bExecutablePath\s+REG_SZ\s+(.+?\.exe)\s*$/i);
+      if (m) { candidates.push(m[1].trim()); continue; }
+      m = line.match(/\bInstallPath\s+REG_SZ\s+(.+?)\s*$/i);
+      if (m) candidates.push(path.join(m[1].trim(), 'python.exe'));
+    }
+    for (const exe of candidates) {
+      if (existsSync(exe)) {
+        const info = pythonInfo(exe);
+        if (info) return info;
+      }
+    }
+  }
+  return null;
+}
+
 function findPython() {
   for (const [cmd, pre] of [['py', ['-3']], ['python3', []], ['python', []]]) {
     const info = pythonInfo(cmd, pre);
     if (info) return info;
   }
+  // Windows registry (PEP 514) — finds Store/any Python even with a stale PATH.
+  const reg = findPythonViaRegistry();
+  if (reg) return reg;
   // PATH may be stale (agent launched before Python was installed) — probe the
   // canonical install roots directly for a `Python3x\python.exe`.
   const roots = [];
