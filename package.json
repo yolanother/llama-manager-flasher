@@ -83,6 +83,7 @@
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "x64ArchFiles": "**/node_modules/**/prebuilds/**",
       "artifactName": "LlamaManagerFlasher-mac-universal.${ext}"
     },
     "linux": {

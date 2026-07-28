@@ -149,11 +149,20 @@ electron-builder 26 uses `@electron/rebuild` 4.x + node-gyp ≥ 11, which is
 Python 3.12/3.13 clean. pnpm settings (patch, build-script allowlist) live in
 `pnpm-workspace.yaml` — newer pnpm ignores the `pnpm` field in package.json.
 
+The mac target is a **universal** (x64 + arm64) dmg. Several native deps
+pulled in by etcher-sdk (lzma-native, drivelist, …) ship prebuilt
+`prebuilds/<platform>-<arch>/*.node` binaries that appear byte-identical in
+both per-arch sub-builds, which makes `@electron/universal` refuse to merge
+("Detected file … same in both x64 and arm64 builds"). `mac.x64ArchFiles:
+"**/node_modules/**/prebuilds/**"` in package.json whitelists those prebuild
+trees so the universal merge takes one copy (each tree still contains both
+arch subdirs, so the runtime loads the right one).
+
 ### CI node requirements
 
 | Platform | Required on the node | Notes |
 |---|---|---|
-| linux | **docker** (preferred) — the package build then runs isolated inside `node:22-bookworm` and needs no host toolchain. Without docker: `build-essential` + `python3`. | libfuse is NOT needed to *build* an AppImage, only to run one. `ci/package-linux.mjs --no-docker` forces the direct host build. |
+| linux | **docker** (preferred) — the package build then runs isolated inside `node:22-bookworm` and needs no host toolchain. Without docker: `build-essential` + `python3`. | libfuse is NOT needed to *build* an AppImage, only to run one. `ci/package-linux.mjs --no-docker` forces the direct host build. The container run mounts `/tmp` as an exec tmpfs — some docker daemons mount container `/tmp` noexec, which otherwise breaks pnpm's corepack-bundled node-gyp (`gyp_main.py: Permission denied`, make Error 126). |
 | windows | **Visual Studio 2022 Build Tools** (C++ workload) + **Python 3**. | `ci/preflight.mjs` auto-installs best-effort via `choco` (or `winget`) when present + elevated; otherwise it fails with the exact install commands. Docker on Windows runs *Linux* containers and cannot build Windows Electron targets — a host toolchain is mandatory. |
 | mac | **Xcode Command Line Tools** (`xcode-select --install`) + `python3`. | No unattended CLT install exists; preflight fails with instructions until an operator installs it. Signing/notarization additionally need `APPLE_ID` / `APPLE_APP_SPECIFIC_PASSWORD` / `APPLE_TEAM_ID`. |
 

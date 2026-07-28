@@ -57,8 +57,17 @@ if (!noDocker) {
       ' && export PATH=/tmp/bin:\\$PATH' +
       ' && pnpm install --frozen-lockfile' +
       ' && node ci/package-linux.mjs --no-docker';
+    // --tmpfs /tmp:exec is REQUIRED: HOME=/tmp/home holds pnpm's corepack
+    // cache, whose bundled node-gyp runs gyp_main.py via its shebang during
+    // the native gyp builds (drivelist/mountutils/...). Docker daemons that
+    // mount the container's /tmp noexec (observed on the linux CI node, but
+    // not on a stock local dockerd) make that exec fail with "Permission
+    // denied" / make Error 126. Mounting /tmp as an explicit exec tmpfs
+    // guarantees the cache is executable regardless of daemon defaults;
+    // size=4g is ample for the deps + electron download on the RAM-rich box.
     run(
       `docker run --rm -u ${uid}:${gid}` +
+      ' --tmpfs /tmp:rw,exec,nosuid,mode=1777,size=4g' +
       ' -e HOME=/tmp/home -e CI=true -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0' +
       ` -v "${repoRoot}":/w -w /w node:22-bookworm` +
       ` bash -lc "${inner}"`,
