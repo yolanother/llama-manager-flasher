@@ -2,7 +2,7 @@
   "name": "llama-manager-flasher",
   "version": "0.1.1",
   "private": true,
-  "description": "Llama Manager Flasher — branded, standalone appliance-image flasher. Downloads the latest Llama Manager appliance ISO (AMD Ryzen stable / NVIDIA DGX Spark experimental), sha256-verifies it, and writes it to USB / microSD with post-write verification.",
+  "description": "Llama Manager Flasher \u2014 branded, standalone appliance-image flasher. Downloads the latest Llama Manager appliance ISO (AMD Ryzen stable / NVIDIA DGX Spark experimental), sha256-verifies it, and writes it to USB / microSD with post-write verification.",
   "author": "Doubling Technologies (DoubTech.ai)",
   "license": "MIT",
   "type": "module",
@@ -34,7 +34,7 @@
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
     "electron": "^33.0.2",
-    "electron-builder": "^25.1.7",
+    "electron-builder": "^26.15.7",
     "png2icons": "^2.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -45,7 +45,7 @@
   "build": {
     "appId": "ai.doubtech.llamamanager.flasher",
     "productName": "Llama Manager Flasher",
-    "copyright": "Copyright © 2026 Doubling Technologies",
+    "copyright": "Copyright \u00a9 2026 Doubling Technologies",
     "files": [
       "dist/**/*",
       "package.json"
@@ -60,7 +60,9 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico",
@@ -70,7 +72,9 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ],
       "icon": "build/icon.icns",
@@ -85,28 +89,14 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.png",
       "category": "Utility",
       "artifactName": "LlamaManagerFlasher-linux-x86_64.${ext}"
-    }
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@ronomon/direct-io",
-      "drivelist",
-      "electron",
-      "esbuild",
-      "lzma-native",
-      "mountutils",
-      "usb",
-      "winusb-driver-generator",
-      "xxhash-addon"
-    ],
-    "patchedDependencies": {
-      "@ronomon/direct-io@3.0.1": "patches/ronomon-direct-io-v8-cage.patch"
     }
   }
 }

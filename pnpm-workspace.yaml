@@ -1,0 +1,38 @@
+# Llama Manager Flasher — pnpm settings (single-package workspace root).
+#
+# Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+# governed by the LICENSE file in the repository root.
+#
+# This is the CURRENT home of pnpm settings — newer pnpm releases IGNORE the
+# "pnpm" field in package.json (observed on a CI mac node: "The pnpm field in
+# package.json is no longer read"), which would silently drop the direct-io
+# patch approval and the build-script allowlist. Keep all pnpm settings here.
+
+# Build scripts are only run for this explicit allowlist (pnpm v10 security
+# default). The test/build CI phases additionally pass --ignore-scripts so
+# none of these compile there; only the package phase builds them.
+onlyBuiltDependencies:
+  - '@ronomon/direct-io'
+  - drivelist
+  - electron
+  - esbuild
+  - lzma-native
+  - mountutils
+  - usb
+  - winusb-driver-generator
+  - xxhash-addon
+
+# Required patch — see patches/ and README "The @ronomon/direct-io patch":
+# V8-memory-cage buffer fix + gyp build fix under pnpm's patch_hash= dirs.
+patchedDependencies:
+  '@ronomon/direct-io@3.0.1': patches/ronomon-direct-io-v8-cage.patch
+
+# NOTE on node-gyp / Python 3.12+: electron-builder is pinned to ^26 in
+# package.json because 25.x ships @electron/rebuild 3.6.x → node-gyp 9,
+# whose bundled gyp imports distutils (removed in Python 3.12) — that was
+# the observed mac package-phase failure (configure.js:325,
+# "ModuleNotFoundError: No module named 'distutils'"). Do NOT try to fix it
+# with an `overrides: node-gyp: ^11` here: node-gyp ≥10 switched its
+# programmatic command API from callbacks to promises and @electron/rebuild
+# 3.6.x hangs forever against it. electron-builder 26 uses
+# @electron/rebuild 4.x + node-gyp 11, which is Python 3.12/3.13 clean.

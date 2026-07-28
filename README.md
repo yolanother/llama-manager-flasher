@@ -138,6 +138,17 @@ C/C++ toolchain at all**. Only the package phase compiles native modules
 — and it is gated by `ci/preflight.mjs`, which verifies the toolchain first
 and attempts a best-effort auto-install where the platform permits.
 
+### Why electron-builder ^26 (do not downgrade)
+
+electron-builder 25.x ships `@electron/rebuild` 3.6.x → node-gyp 9, whose
+bundled gyp imports `distutils` — **removed in Python 3.12** — so packaging
+fails on any node with a modern Python (`ModuleNotFoundError: No module named
+'distutils'`). Overriding node-gyp alone does not work: node-gyp ≥ 10 moved
+to a promise API and `@electron/rebuild` 3.6.x hangs against it.
+electron-builder 26 uses `@electron/rebuild` 4.x + node-gyp ≥ 11, which is
+Python 3.12/3.13 clean. pnpm settings (patch, build-script allowlist) live in
+`pnpm-workspace.yaml` — newer pnpm ignores the `pnpm` field in package.json.
+
 ### CI node requirements
 
 | Platform | Required on the node | Notes |
