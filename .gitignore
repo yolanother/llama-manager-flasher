@@ -6,3 +6,8 @@ reports/
 *.log
 .DS_Store
 .vite/
+# corepack/node-gyp cache written by the containerized linux package build
+# (ci/package-linux.mjs sets HOME here so it lives on an exec-capable fs).
+.ci-home/
+# local pnpm store, if configured in-tree
+.pnpm-store/

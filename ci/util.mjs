@@ -85,8 +85,15 @@ export function ensureDeps() {
  * `pnpm rebuild` guards the case where pnpm considers the install up-to-date
  * and skips the previously-ignored build scripts anyway. Requires the native
  * toolchain that ci/preflight.mjs verifies.
+ *
+ * CI=true is forced for the install: switching a node_modules that a prior
+ * phase populated with --ignore-scripts over to a full scripted install makes
+ * pnpm want to replace the modules dir, which it refuses without a TTY
+ * (`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`) unless CI is set. Setting it
+ * here keeps the direct build (and the docker path's --no-docker fallback)
+ * working regardless of the runner's ambient environment.
  */
 export function ensureFullDeps() {
-  run('pnpm install --frozen-lockfile');
-  run('pnpm rebuild');
+  run('pnpm install --frozen-lockfile', { CI: 'true' });
+  run('pnpm rebuild', { CI: 'true' });
 }
