@@ -15,7 +15,7 @@
 # The test phase writes a JUnit XML report that DoubTech CI aggregates via
 # testReports; the package phase emits exactly one versionless installer per
 # platform into dist-installer/ (LlamaManagerFlasher-win-x64-portable.exe /
-# -mac-universal.dmg / -linux-x86_64.AppImage) — the marketing site
+# -mac-arm64.dmg / -linux-x86_64.AppImage) — the marketing site
 # hard-links those names.
 version: 1
 name: llama-manager-flasher
