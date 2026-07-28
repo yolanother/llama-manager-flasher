@@ -20,7 +20,7 @@ export type BuildPlatform = 'linux' | 'mac' | 'windows';
  */
 export const ARTIFACT_NAMES: Record<BuildPlatform, string> = {
   windows: 'LlamaManagerFlasher-win-x64-portable.exe',
-  mac: 'LlamaManagerFlasher-mac-universal.dmg',
+  mac: 'LlamaManagerFlasher-mac-arm64.dmg',
   linux: 'LlamaManagerFlasher-linux-x86_64.AppImage',
 };
 

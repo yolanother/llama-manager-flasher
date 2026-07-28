@@ -69,6 +69,12 @@ if (!noDocker) {
       `docker run --rm -u ${uid}:${gid}` +
       ' --tmpfs /tmp:rw,exec,nosuid,mode=1777,size=4g' +
       ' -e HOME=/tmp/home -e CI=true -e COREPACK_ENABLE_DOWNLOAD_PROMPT=0' +
+      // node-gyp regenerates makefiles by execing gyp_main.py; with npm_config_python
+      // unset it tries to run the .py directly from the read-only corepack cache and
+      // hits `gyp_main.py: Permission denied` (Error 126). Pinning the interpreter
+      // makes node-gyp invoke `python3 gyp_main.py` instead. python3 ships in
+      // node:22-bookworm (full image).
+      ' -e npm_config_python=/usr/bin/python3' +
       ` -v "${repoRoot}":/w -w /w node:22-bookworm` +
       ` bash -lc "${inner}"`,
     );

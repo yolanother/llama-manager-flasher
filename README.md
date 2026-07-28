@@ -32,7 +32,7 @@ Grab the installer for your OS (versionless "latest" names, linked from the
 Llama Manager site):
 
 - Windows: `LlamaManagerFlasher-win-x64-portable.exe`
-- macOS: `LlamaManagerFlasher-mac-universal.dmg`
+- macOS: `LlamaManagerFlasher-mac-arm64.dmg`
 - Linux: `LlamaManagerFlasher-linux-x86_64.AppImage`
 
 ## Usage
@@ -88,7 +88,7 @@ pnpm build                 # tsc (main+preload) + vite (renderer)
 pnpm start                 # run the built app
 pnpm package:linux         # dist-installer/LlamaManagerFlasher-linux-x86_64.AppImage
 pnpm package:win           # (on Windows) ...-win-x64-portable.exe
-pnpm package:mac           # (on macOS)   ...-mac-universal.dmg
+pnpm package:mac           # (on macOS)   ...-mac-arm64.dmg
 pnpm gen-icons             # regenerate build/icon.{png,ico,icns} from icon.svg
 ```
 
@@ -149,14 +149,13 @@ electron-builder 26 uses `@electron/rebuild` 4.x + node-gyp ≥ 11, which is
 Python 3.12/3.13 clean. pnpm settings (patch, build-script allowlist) live in
 `pnpm-workspace.yaml` — newer pnpm ignores the `pnpm` field in package.json.
 
-The mac target is a **universal** (x64 + arm64) dmg. Several native deps
-pulled in by etcher-sdk (lzma-native, drivelist, …) ship prebuilt
-`prebuilds/<platform>-<arch>/*.node` binaries that appear byte-identical in
-both per-arch sub-builds, which makes `@electron/universal` refuse to merge
-("Detected file … same in both x64 and arm64 builds"). `mac.x64ArchFiles:
-"**/node_modules/**/prebuilds/**"` in package.json whitelists those prebuild
-trees so the universal merge takes one copy (each tree still contains both
-arch subdirs, so the runtime loads the right one).
+The mac target is **arm64-only** (Apple Silicon), not universal. Several
+native deps pulled in by etcher-sdk (lzma-native, drivelist, …) ship prebuilt
+`prebuilds/<platform>-<arch>/*.node` binaries that appear byte-identical
+across a universal build's two per-arch sub-builds, which makes
+`@electron/universal` refuse to merge them ("Detected file … same in both x64
+and arm64 builds"). Rather than whitelist every such prebuild, the dmg is
+built for arm64 alone — the only supported mac hardware.
 
 ### CI node requirements
 

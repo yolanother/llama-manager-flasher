@@ -23,7 +23,7 @@ const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 describe('artifact name mapping', () => {
   it('produces the exact versionless names the site links', () => {
     expect(artifactNameFor('windows')).toBe('LlamaManagerFlasher-win-x64-portable.exe');
-    expect(artifactNameFor('mac')).toBe('LlamaManagerFlasher-mac-universal.dmg');
+    expect(artifactNameFor('mac')).toBe('LlamaManagerFlasher-mac-arm64.dmg');
     expect(artifactNameFor('linux')).toBe('LlamaManagerFlasher-linux-x86_64.AppImage');
   });
 
