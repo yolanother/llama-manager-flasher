@@ -68,12 +68,18 @@ function pythonInfo(cmd, preArgs = []) {
     'import sys;print(sys.executable+"|"+sys.version.split()[0])']);
   const out = (r.stdout || '').trim();
   if (r.ok && out.includes('|')) {
-    const [exe, ver] = out.split('|');
-    // Do NOT require existsSync(exe): a Store Python lives under the ACL-locked
-    // %ProgramFiles%\WindowsApps\... which denies stat to a normal user even
-    // though the interpreter is executable. If it RAN and reported a version,
-    // it exists and works — trust that.
-    if (exe && /^\d+\.\d+/.test(ver)) return { exe: exe.trim(), version: `Python ${ver}` };
+    const exe = (out.split('|')[0] || '').trim();
+    const ver = out.split('|')[1] || '';
+    // REJECT a Store Python: its interpreter resolves under ...\WindowsApps\...
+    // and node-gyp cannot use it — it is only launchable via the PATH-resolved
+    // app-execution-alias, never by a concrete path we can pin. Returning null
+    // makes every probe skip it and fall through to a real install (a
+    // python.org Program Files interpreter found via PATH / registry
+    // ExecutablePath / the on-disk Program Files scan).
+    if (exe && /[\\/]WindowsApps[\\/]/i.test(exe)) return null;
+    // Otherwise, do NOT require existsSync(exe): if it RAN and reported a
+    // version it exists and works.
+    if (exe && /^\d+\.\d+/.test(ver)) return { exe, version: `Python ${ver}` };
   }
   return null;
 }
@@ -131,20 +137,10 @@ function findPython() {
     const info = pythonInfo(cmd, pre);
     if (info) return info;
   }
-  // The Store Python's per-user app-execution-alias — the exact path the
-  // operator confirmed (`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`).
-  // It is NOT on the CI agent's (stale) PATH, and unlike the Program Files
-  // \WindowsApps package exe it CAN be launched by this absolute path. Try it
-  // (and the python3 alias) directly; do not existsSync-gate — the alias
-  // reparse point may deny stat but still execs.
-  const localApp = process.env.LOCALAPPDATA;
-  if (localApp) {
-    for (const name of ['python.exe', 'python3.exe']) {
-      const info = pythonInfo(path.join(localApp, 'Microsoft', 'WindowsApps', name));
-      if (info) return info;
-    }
-  }
-  // Windows registry (PEP 514) — finds Store/any Python even with a stale PATH.
+  // (A Store Python under %LOCALAPPDATA%\Microsoft\WindowsApps is intentionally
+  // NOT probed: pythonInfo rejects any WindowsApps-resolved interpreter because
+  // node-gyp cannot use it. A real interpreter is required — see below.)
+  // Windows registry (PEP 514) — finds a real Python even with a stale PATH.
   const reg = findPythonViaRegistry();
   if (reg) return reg;
   // PATH may be stale (agent launched before Python was installed) — probe the
