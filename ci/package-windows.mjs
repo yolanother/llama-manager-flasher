@@ -12,6 +12,20 @@ import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { run, ensureFullDeps, repoRoot } from './util.mjs';
 
+// electron-builder's production node-module collector shells out to
+// powershell.exe; on a CI agent whose (minimal/stale) PATH lacks the Windows
+// PowerShell directory this fails with `spawn powershell.exe ENOENT`. Ensure
+// the standard PowerShell location is on PATH for the electron-builder child.
+if (process.platform === 'win32') {
+  const sysRoot = process.env.SystemRoot || 'C:\\Windows';
+  const psDir = path.join(sysRoot, 'System32', 'WindowsPowerShell', 'v1.0');
+  const cur = process.env.Path || process.env.PATH || '';
+  if (existsSync(path.join(psDir, 'powershell.exe')) && !cur.toLowerCase().includes(psDir.toLowerCase())) {
+    process.env.PATH = `${psDir};${cur}`;
+    console.log(`[ci] added PowerShell to PATH for electron-builder: ${psDir}`);
+  }
+}
+
 ensureFullDeps();
 run('pnpm build');
 run('pnpm exec electron-builder --win --publish never');
