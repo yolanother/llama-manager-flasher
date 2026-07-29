@@ -32,7 +32,7 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { probe, repoRoot } from './util.mjs';
+import { probe, probeRaw, repoRoot } from './util.mjs';
 
 /**
  * Detects a usable Docker engine and reports the container OS type.
@@ -64,7 +64,10 @@ export function detectDocker() {
  * @returns {{ exe: string, version: string } | null} Resolved interpreter, or null.
  */
 function pythonInfo(cmd, preArgs = []) {
-  const r = probe(cmd, [...preArgs, '-c',
+  // probeRaw (shell:false) — the `-c` one-liner contains `|`/`"`/`;`/`()` which
+  // a Windows shell:true spawn would mangle (the `|` becomes a pipe), which is
+  // exactly why a present, working Python previously read as MISSING.
+  const r = probeRaw(cmd, [...preArgs, '-c',
     'import sys;print(sys.executable+"|"+sys.version.split()[0])']);
   const out = (r.stdout || '').trim();
   if (r.ok && out.includes('|')) {
@@ -133,7 +136,13 @@ function findPythonViaRegistry() {
 }
 
 function findPython() {
-  for (const [cmd, pre] of [['py', ['-3']], ['python3', []], ['python', []]]) {
+  // Prefer stable, node-gyp-supported minors (3.12/3.11/3.10) over whatever
+  // `py -3` defaults to (a box may have a too-new 3.14 that node-gyp rejects),
+  // then fall back to generic launcher/PATH names.
+  for (const [cmd, pre] of [
+    ['py', ['-3.12']], ['py', ['-3.11']], ['py', ['-3.10']],
+    ['py', ['-3']], ['python3', []], ['python', []],
+  ]) {
     const info = pythonInfo(cmd, pre);
     if (info) return info;
   }

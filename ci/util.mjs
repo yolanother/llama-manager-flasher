@@ -64,6 +64,28 @@ export function probe(file, args = []) {
 }
 
 /**
+ * Like {@link probe} but with `shell: false` on every platform, so arguments
+ * are passed to the child VERBATIM. Required whenever an argument contains
+ * shell metacharacters — e.g. a Python `-c` one-liner with `|`, `"`, `;`, `()`
+ * — which a Windows `shell:true` spawn would route through cmd.exe and mangle
+ * (the `|` becoming a pipe), producing empty/garbage output. On Windows
+ * CreateProcess still resolves a bare `py`/`python` via PATH (+.exe), so
+ * shell-less invocation of the launcher/interpreter works.
+ *
+ * @param {string} file Executable (bare name or absolute path).
+ * @param {string[]} args Literal arguments.
+ * @returns {{ ok: boolean, stdout: string, stderr: string }}
+ */
+export function probeRaw(file, args = []) {
+  const r = spawnSync(file, args, { encoding: 'utf8', shell: false });
+  return {
+    ok: !r.error && r.status === 0,
+    stdout: (r.stdout ?? '').trim(),
+    stderr: (r.stderr ?? '').trim(),
+  };
+}
+
+/**
  * Installs dependencies WITHOUT lifecycle scripts when node_modules is
  * absent (clean checkout). The test and build phases only run vitest / tsc /
  * vite — pure TypeScript tooling — so no native gyp builds (and therefore no
