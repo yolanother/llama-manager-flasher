@@ -1,6 +1,6 @@
 {
   "name": "llama-manager-flasher",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Llama Manager Flasher \u2014 branded, standalone appliance-image flasher. Downloads the latest Llama Manager appliance ISO (AMD Ryzen stable / NVIDIA DGX Spark experimental), sha256-verifies it, and writes it to USB / microSD with post-write verification.",
   "author": "Doubling Technologies (DoubTech.ai)",
@@ -51,6 +51,10 @@
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "**/*.node",
+      "**/node_modules/**/{@ronomon/direct-io,drivelist,mountutils,usb,winusb-driver-generator,lzma-native,xxhash-addon}/**"
+    ],
     "directories": {
       "output": "dist-installer",
       "buildResources": "build"
@@ -84,6 +88,28 @@
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
       "artifactName": "LlamaManagerFlasher-mac-arm64.${ext}"
+    },
+    "dmg": {
+      "title": "Llama Manager Flasher",
+      "background": "build/dmg-background.png",
+      "iconSize": 104,
+      "window": {
+        "width": 540,
+        "height": 400
+      },
+      "contents": [
+        {
+          "x": 150,
+          "y": 218,
+          "type": "file"
+        },
+        {
+          "x": 390,
+          "y": 218,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "linux": {
       "target": [

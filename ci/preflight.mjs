@@ -131,6 +131,19 @@ function findPython() {
     const info = pythonInfo(cmd, pre);
     if (info) return info;
   }
+  // The Store Python's per-user app-execution-alias — the exact path the
+  // operator confirmed (`%LOCALAPPDATA%\Microsoft\WindowsApps\python.exe`).
+  // It is NOT on the CI agent's (stale) PATH, and unlike the Program Files
+  // \WindowsApps package exe it CAN be launched by this absolute path. Try it
+  // (and the python3 alias) directly; do not existsSync-gate — the alias
+  // reparse point may deny stat but still execs.
+  const localApp = process.env.LOCALAPPDATA;
+  if (localApp) {
+    for (const name of ['python.exe', 'python3.exe']) {
+      const info = pythonInfo(path.join(localApp, 'Microsoft', 'WindowsApps', name));
+      if (info) return info;
+    }
+  }
   // Windows registry (PEP 514) — finds Store/any Python even with a stale PATH.
   const reg = findPythonViaRegistry();
   if (reg) return reg;
