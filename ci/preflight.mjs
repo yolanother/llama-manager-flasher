@@ -251,6 +251,25 @@ function preflightWindows() {
     pinPythonForNodeGyp(py.exe);
     return;
   }
+  if (!py) {
+    // Ground-truth diagnostics: dump exactly what THIS process (the CI agent's
+    // env) can see, so a Python that "is installed" but undiscovered can be
+    // pinpointed — PATH-independent reg included.
+    console.error('[preflight] --- Python discovery diagnostics (agent env) ---');
+    for (const [label, cmd, args] of [
+      ['py -0p (launcher list)', 'py', ['-0p']],
+      ['where py', 'where', ['py']],
+      ['where python', 'where', ['python']],
+      ['reg PythonCore (HKCU)', 'reg', ['query', 'HKCU\\Software\\Python', '/s']],
+      ['reg PythonCore (HKLM)', 'reg', ['query', 'HKLM\\Software\\Python', '/s']],
+    ]) {
+      const r = probe(cmd, args);
+      const out = ((r.stdout || '') + (r.stderr || '')).trim().slice(0, 800) || '(no output)';
+      console.error(`[preflight]   $ ${cmd} ${args.join(' ')}  => exit ${r.ok ? 0 : 'nonzero'}\n${out}`);
+    }
+    console.error(`[preflight]   PATH=${(process.env.PATH || process.env.Path || '').slice(0, 600)}`);
+    console.error('[preflight] --- end diagnostics ---');
+  }
   console.error(
     '[preflight] FATAL: Windows native toolchain missing — the package phase compiles\n' +
     '  @ronomon/direct-io / drivelist and needs, on this node:\n' +
