@@ -69,7 +69,11 @@ function pythonInfo(cmd, preArgs = []) {
   const out = (r.stdout || '').trim();
   if (r.ok && out.includes('|')) {
     const [exe, ver] = out.split('|');
-    if (exe && existsSync(exe) && /^\d+\.\d+/.test(ver)) return { exe, version: `Python ${ver}` };
+    // Do NOT require existsSync(exe): a Store Python lives under the ACL-locked
+    // %ProgramFiles%\WindowsApps\... which denies stat to a normal user even
+    // though the interpreter is executable. If it RAN and reported a version,
+    // it exists and works — trust that.
+    if (exe && /^\d+\.\d+/.test(ver)) return { exe: exe.trim(), version: `Python ${ver}` };
   }
   return null;
 }
@@ -97,17 +101,26 @@ function findPythonViaRegistry() {
     const r = probe('reg', ['query', `${hive}\\Software\\Python`, '/s']);
     if (!r.ok || !r.stdout) continue;
     const candidates = [];
-    for (const line of r.stdout.split(/\r?\n/)) {
-      let m = line.match(/\bExecutablePath\s+REG_SZ\s+(.+?\.exe)\s*$/i);
+    const lines = r.stdout.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // python.org registers an explicit `ExecutablePath` value pointing at python.exe.
+      let m = line.match(/^\s*ExecutablePath\s+REG_SZ\s+(.+?\.exe)\s*$/i);
       if (m) { candidates.push(m[1].trim()); continue; }
-      m = line.match(/\bInstallPath\s+REG_SZ\s+(.+?)\s*$/i);
-      if (m) candidates.push(path.join(m[1].trim(), 'python.exe'));
-    }
-    for (const exe of candidates) {
-      if (existsSync(exe)) {
-        const info = pythonInfo(exe);
-        if (info) return info;
+      // Every real install has an `InstallPath` KEY whose `(Default)` value is the
+      // install dir (Store Python included) — read the (Default) on a nearby line.
+      if (/\\InstallPath\s*$/i.test(line)) {
+        for (let k = i + 1; k < Math.min(i + 5, lines.length); k++) {
+          const dm = lines[k].match(/^\s*\(Default\)\s+REG_SZ\s+(.+?)\s*$/i);
+          if (dm) { candidates.push(path.join(dm[1].trim(), 'python.exe')); break; }
+        }
       }
+    }
+    // Try running each candidate directly — do NOT existsSync-gate (WindowsApps
+    // denies stat but permits exec for the owning user).
+    for (const exe of candidates) {
+      const info = pythonInfo(exe);
+      if (info) return info;
     }
   }
   return null;
