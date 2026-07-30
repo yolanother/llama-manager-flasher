@@ -61,7 +61,14 @@ interface ElevationStatus {
   manualHint: string | null;
 }
 
+/** Native operation available to the custom renderer titlebar. */
+type WindowControl = 'minimize' | 'maximize' | 'close';
+
 const api = {
+  window: {
+    control: (command: WindowControl): Promise<void> =>
+      ipcRenderer.invoke('window:control', command),
+  },
   manifest: {
     fetch: (args: { platformId: 'amd' | 'nvidia-spark' }): Promise<ApplianceImage> =>
       ipcRenderer.invoke('manifest:fetch', args),

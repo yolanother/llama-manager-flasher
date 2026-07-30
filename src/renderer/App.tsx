@@ -73,6 +73,45 @@ function LlamaMark({ size = 34 }: { size?: number }): JSX.Element {
   );
 }
 
+/** Accessible native-equivalent controls for the frameless app window. */
+function WindowControls(): JSX.Element {
+  return (
+    <div className="window-controls" aria-label="Window controls">
+      <button
+        type="button"
+        aria-label="Minimize window"
+        title="Minimize"
+        onClick={() => void window.llamaFlasher.window.control('minimize')}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 8.5h10" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        aria-label="Toggle maximize window"
+        title="Maximize or restore"
+        onClick={() => void window.llamaFlasher.window.control('maximize')}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <rect x="3.5" y="3.5" width="9" height="9" rx="0.5" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="window-close"
+        aria-label="Close window"
+        title="Close"
+        onClick={() => void window.llamaFlasher.window.control('close')}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m4 4 8 8M12 4l-8 8" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 /** Root wizard component. */
 export default function App(): JSX.Element {
   const [step, setStep] = useState<Step>('platform');
@@ -215,17 +254,20 @@ export default function App(): JSX.Element {
             <p className="sub">Appliance image writer{version ? ` · v${version}` : ''}</p>
           </div>
         </div>
-        <ol className="steps" aria-label="Progress">
-          {(['platform', 'drive', 'confirm', 'progress'] as const).map((s, i) => (
-            <li
-              key={s}
-              className={step === s ? 'active' : ''}
-              aria-current={step === s ? 'step' : undefined}
-            >
-              {i + 1}
-            </li>
-          ))}
-        </ol>
+        <div className="titlebar-end">
+          <ol className="steps" aria-label="Progress">
+            {(['platform', 'drive', 'confirm', 'progress'] as const).map((s, i) => (
+              <li
+                key={s}
+                className={step === s ? 'active' : ''}
+                aria-current={step === s ? 'step' : undefined}
+              >
+                {i + 1}
+              </li>
+            ))}
+          </ol>
+          <WindowControls />
+        </div>
       </header>
 
       <main className="stage">

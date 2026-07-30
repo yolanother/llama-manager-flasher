@@ -24,6 +24,10 @@ import {
   type PlatformId,
 } from '../shared/manifest.js';
 import { driveRejectionReason, type CandidateDrive } from '../shared/deviceSafety.js';
+import {
+  dispatchWindowControl,
+  type WindowControl,
+} from '../shared/windowControls.js';
 import { downloadImage, type DownloadProgress } from './download.js';
 import { getElevationStatus, relaunchElevated } from './elevation.js';
 
@@ -57,6 +61,7 @@ function createWindow(): void {
     minHeight: 560,
     title: 'Llama Manager Flasher',
     backgroundColor: '#070708',
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -86,6 +91,16 @@ app.on('window-all-closed', () => {
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+/* ─────────────────────────────────────────────────────────────────
+   IPC: custom titlebar window controls
+   ─────────────────────────────────────────────────────────────── */
+
+ipcMain.handle('window:control', (event, command: WindowControl) => {
+  const target = BrowserWindow.fromWebContents(event.sender);
+  if (!target) throw new Error('window control has no owning window');
+  dispatchWindowControl(command, target);
 });
 
 /* ─────────────────────────────────────────────────────────────────

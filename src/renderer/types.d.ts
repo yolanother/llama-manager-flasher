@@ -57,8 +57,14 @@ interface ElevationStatus {
   manualHint: string | null;
 }
 
+/** Native operation available to the custom renderer titlebar. */
+type WindowControl = 'minimize' | 'maximize' | 'close';
+
 /** The narrow IPC surface the preload bridge exposes to the renderer. */
 interface LlamaFlasherBridge {
+  window: {
+    control(command: WindowControl): Promise<void>;
+  };
   manifest: {
     fetch(args: { platformId: 'amd' | 'nvidia-spark' }): Promise<ApplianceImage>;
   };
