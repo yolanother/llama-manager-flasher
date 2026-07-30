@@ -41,7 +41,9 @@ Llama Manager site):
    (experimental; expect rough edges, it has not been validated on hardware).
 2. **Choose the target drive** — only removable USB / SD devices ≤ 2 TiB are
    listed; system disks are filtered out and re-checked in the privileged
-   process right before writing.
+   process right before writing. Inserted a drive after opening the picker?
+   Choose **Rescan**. Enumeration failures are shown separately from an empty
+   drive list, and an unplugged selection is cleared on the next scan.
 3. **Confirm** — type the device path to confirm the destructive write.
 4. Wait through **download → checksum → write → verify**. Downloads are cached
    (`image-cache/` under the app's user-data dir), resume over HTTP Range on
@@ -52,8 +54,10 @@ Llama Manager site):
 
 Raw block-device writes need elevated rights:
 
-- **Windows** — launch normally; when flashing without admin rights the app
-  offers **Relaunch elevated** (UAC prompt via `Start-Process -Verb RunAs`).
+- **Windows** — launch normally; the drive picker warns before selection when
+  administrator rights are still needed and offers **Relaunch as administrator**
+  (UAC prompt via `Start-Process -Verb RunAs`). The fresh elevated process owns
+  both the final safety scan and raw write.
 - **Linux** — the app offers **Relaunch elevated** through `pkexec` (polkit).
   If pkexec is unavailable, run the AppImage with
   `sudo ./LlamaManagerFlasher-linux-x86_64.AppImage --no-sandbox`.
@@ -75,6 +79,14 @@ Raw block-device writes need elevated rights:
 This is a portable one-shot tool — it has **no auto-updater** by design.
 The app version lives in the release tag and About line, never in the
 artifact filename.
+
+The window uses a custom frameless titlebar. Drag anywhere in the title region
+except its controls to move it; minimize, maximize/restore, and close remain
+keyboard accessible. On the platform screen the backdrop is grayscale at rest,
+then tints AMD red or NVIDIA green for pointer hover and keyboard focus. Reduced
+motion preferences disable the tint transition. Both the in-app mark and the
+packaged Windows/macOS/Linux icons are generated from the canonical Llama
+Manager favicon artwork.
 
 ## Building from source
 
@@ -167,10 +179,12 @@ built for arm64 alone — the only supported mac hardware.
 
 ## Architecture
 
-- `src/main/` — Electron main process: manifest fetch/normalize, device
-  scanning, resumable verified downloads, etcher-sdk flash with verify,
-  elevation. All safety rails enforced here.
+- `src/main/` — Electron main process: manifest fetch/normalize, leak-free
+  device scanning, resumable verified downloads, etcher-sdk flash with verify,
+  elevation, and allow-listed native window controls. All safety rails are
+  enforced here.
 - `src/preload/` — the narrow contextBridge IPC surface (`window.llamaFlasher`).
-- `src/renderer/` — React wizard UI (dark frosted-glass, keyboard accessible).
+- `src/renderer/` — React wizard UI (frameless dark glass, explicit drive
+  rescans, platform-reactive grayscale backdrop, keyboard accessible).
 - `src/shared/` — pure logic (manifest normalization, device safety rails,
   artifact-name mapping) with unit tests under `tests/`.
