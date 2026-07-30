@@ -23,12 +23,13 @@ import {
   type ApplianceImage,
   type PlatformId,
 } from '../shared/manifest.js';
-import { driveRejectionReason, type CandidateDrive } from '../shared/deviceSafety.js';
+import { driveRejectionReason } from '../shared/deviceSafety.js';
 import {
   dispatchWindowControl,
   type WindowControl,
 } from '../shared/windowControls.js';
 import { downloadImage, type DownloadProgress } from './download.js';
+import { scanSafeDrives, type DriveInfo, type ScannerLike } from './driveScanner.js';
 import { getElevationStatus, relaunchElevated } from './elevation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -154,39 +155,10 @@ async function loadScanner() {
   return new sdk.scanner.Scanner(adapters);
 }
 
-/** Drive metadata sent to the renderer's target picker. */
-interface DriveInfo extends CandidateDrive {
-  mountpoints: string[];
-}
-
-/**
- * Enumerates block devices and returns only those passing the safety rails.
- * The 250ms settle delay compensates for macOS DiskArbitration lag.
- *
- * @returns Drives that are safe to offer as flash targets.
- */
-async function scanSafeDrives(): Promise<DriveInfo[]> {
-  const scanner = await loadScanner();
-  await scanner.start();
-  await new Promise((r) => setTimeout(r, 250));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const drives = Array.from(scanner.drives.values() as Iterable<any>);
-  scanner.stop();
-  return drives
-    .map((d): DriveInfo => ({
-      device: d.device,
-      description: d.description ?? d.devicePath ?? d.device,
-      size: d.size ?? null,
-      isSystem: !!d.isSystem,
-      isUSB: !!d.isUSB,
-      isCard: !!d.isCard,
-      isRemovable: !!d.isRemovable,
-      mountpoints: (d.mountpoints ?? []).map((m: { path: string }) => m.path),
-    }))
-    .filter((d) => driveRejectionReason(d) === null);
-}
-
-ipcMain.handle('devices:list', async (): Promise<DriveInfo[]> => scanSafeDrives());
+ipcMain.handle('devices:list', async (): Promise<DriveInfo[]> => {
+  const scanner = await loadScanner() as ScannerLike;
+  return scanSafeDrives(scanner);
+});
 
 /* ─────────────────────────────────────────────────────────────────
    IPC: image download (resume + retry + sha256 verify)

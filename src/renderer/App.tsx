@@ -4,8 +4,8 @@
 // governed by the LICENSE file in the repository root.
 //
 // Implements the five-step flashing wizard: platform select (AMD stable /
-// NVIDIA Spark EXPERIMENTAL) → target-drive picker (auto-refreshing,
-// removable-only list served by the main process) → destructive confirmation
+// NVIDIA Spark EXPERIMENTAL) → target-drive picker (manual and automatic
+// rescans, removable-only list served by the main process) → destructive confirmation
 // (the user must type the device path) → download + flash + verify progress
 // → done. All privileged work happens in the main process; this component
 // only sequences the IPC calls and renders progress. Elevation status is
@@ -51,6 +51,104 @@ function fmtBytes(n: number | null): string {
 function fmtSpeed(speed?: number): string {
   if (!speed || !Number.isFinite(speed)) return '';
   return `${fmtBytes(speed)}/s`;
+}
+
+/** Props for the empty/error/loading state shown below the drive picker. */
+interface DriveScanNoticeProps {
+  /** True while the main process is enumerating removable media. */
+  scanning: boolean;
+  /** User-facing enumeration error, or an empty string after a successful scan. */
+  error: string;
+  /** Requests an immediate drive enumeration. */
+  onRescan: () => void;
+}
+
+/**
+ * Renders an accessible drive-discovery status with an explicit retry action.
+ *
+ * @param props - Current scanner state and the callback used to rescan.
+ * @returns Status content for the otherwise-empty removable-drive list.
+ */
+export function DriveScanNotice({ scanning, error, onRescan }: DriveScanNoticeProps): JSX.Element {
+  if (scanning) {
+    return (
+      <div className="drive-scan-notice" role="status" aria-live="polite">
+        <p>Scanning for USB and microSD drives…</p>
+        <button type="button" className="ghost compact" disabled>Rescan</button>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="drive-scan-notice scan-error" role="alert">
+        <div>
+          <strong>Could not scan removable drives</strong>
+          <p>{error}</p>
+        </div>
+        <button type="button" className="ghost compact" onClick={onRescan}>Try again</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="drive-scan-notice" role="status">
+      <p>No removable drives found. Insert a USB stick or microSD card.</p>
+      <button type="button" className="ghost compact" onClick={onRescan}>Rescan</button>
+    </div>
+  );
+}
+
+/** Props for the Windows raw-device permission preflight notice. */
+interface DrivePermissionNoticeProps {
+  /** Current main-process elevation status, or null while it is loading. */
+  elevation: ElevationStatus | null;
+  /** Requests a UAC-elevated application relaunch. */
+  onRelaunch: () => void;
+}
+
+/**
+ * Prompts Windows users for UAC elevation before they choose a flash target.
+ *
+ * @param props - Current privilege status and elevated-relaunch callback.
+ * @returns An actionable Windows notice, or null when it is not needed.
+ */
+export function DrivePermissionNotice({
+  elevation,
+  onRelaunch,
+}: DrivePermissionNoticeProps): JSX.Element | null {
+  if (elevation?.platform !== 'win32' || elevation.elevated) return null;
+
+  return (
+    <div className="warn-box elev drive-permission" role="status">
+      <div>
+        <strong>Administrator access is required</strong>
+        <p>Windows requires UAC approval before this app can write a USB stick or microSD card.</p>
+      </div>
+      {elevation.canRelaunch ? (
+        <button type="button" className="ghost compact" onClick={onRelaunch}>
+          Relaunch as administrator
+        </button>
+      ) : (
+        <p className="hint">{elevation.manualHint ?? 'Close the app, then run it as administrator.'}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Reconciles the selected device with a fresh enumeration result.
+ *
+ * @param selected - Previously selected drive, or null.
+ * @param drives - Fresh drive metadata from the main process.
+ * @returns The refreshed matching drive, or null when it was unplugged.
+ */
+export function reconcileSelectedDrive(
+  selected: DriveInfo | null,
+  drives: DriveInfo[],
+): DriveInfo | null {
+  if (selected == null) return null;
+  return drives.find((candidate) => candidate.device === selected.device) ?? null;
 }
 
 /** The approved Llama Manager favicon artwork used in the app titlebar. */
@@ -114,6 +212,8 @@ export default function App(): JSX.Element {
   const [manifestLoading, setManifestLoading] = useState<'amd' | 'nvidia-spark' | null>(null);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [drive, setDrive] = useState<DriveInfo | null>(null);
+  const [scanningDrives, setScanningDrives] = useState(false);
+  const [driveScanError, setDriveScanError] = useState('');
   const [typed, setTyped] = useState('');
   const [elevation, setElevation] = useState<ElevationStatus | null>(null);
   const [phase, setPhase] = useState<ProgressPhase>('download');
@@ -123,28 +223,42 @@ export default function App(): JSX.Element {
   const [error, setError] = useState('');
   const [version, setVersion] = useState('');
   const flashing = useRef(false);
+  const scanSequence = useRef(0);
 
   useEffect(() => {
     void window.llamaFlasher.appInfo().then((i) => setVersion(i.version));
     void window.llamaFlasher.elevation.status().then(setElevation);
   }, []);
 
-  // Auto-refresh the drive list every 2s while the picker is showing.
+  /** Requests a fresh device list and ignores any older scan finishing later. */
+  const refreshDrives = useCallback(async () => {
+    const sequence = ++scanSequence.current;
+    setScanningDrives(true);
+    setDriveScanError('');
+    try {
+      const refreshed = await window.llamaFlasher.devices.list();
+      if (sequence !== scanSequence.current) return;
+      setDrives(refreshed);
+      setDrive((selected) => reconcileSelectedDrive(selected, refreshed));
+    } catch (scanError) {
+      if (sequence !== scanSequence.current) return;
+      setDriveScanError(scanError instanceof Error ? scanError.message : String(scanError));
+    } finally {
+      if (sequence === scanSequence.current) setScanningDrives(false);
+    }
+  }, []);
+
+  // Auto-refresh the drive list every 2s while the picker is showing, while
+  // retaining a visible manual rescan for newly inserted or slow card readers.
   useEffect(() => {
     if (step !== 'drive') return;
-    let live = true;
-    const refresh = () => {
-      void window.llamaFlasher.devices.list().then((d) => {
-        if (live) setDrives(d);
-      }).catch(() => {});
-    };
-    refresh();
-    const t = setInterval(refresh, 2000);
+    void refreshDrives();
+    const t = setInterval(() => void refreshDrives(), 2000);
     return () => {
-      live = false;
       clearInterval(t);
+      scanSequence.current += 1;
     };
-  }, [step]);
+  }, [refreshDrives, step]);
 
   const choosePlatform = useCallback(async (platformId: 'amd' | 'nvidia-spark') => {
     setManifestLoading(platformId);
@@ -310,6 +424,10 @@ export default function App(): JSX.Element {
               Flashing <strong>{image.file}</strong> ({fmtBytes(image.size)}, v{image.version})
               {image.channel === 'experimental' && <span className="chip chip-exp inline">Experimental</span>}
             </p>
+            <DrivePermissionNotice
+              elevation={elevation}
+              onRelaunch={() => void window.llamaFlasher.elevation.relaunch()}
+            />
             {image.channel === 'experimental' && (
               <p className="warn-box">
                 This build is unvalidated on hardware. Use it only if you know what you are doing.
@@ -317,7 +435,11 @@ export default function App(): JSX.Element {
             )}
             <div className="drive-list" role="radiogroup" aria-label="Removable drives">
               {drives.length === 0 && (
-                <p className="empty">No removable drives found. Insert a USB stick or microSD card…</p>
+                <DriveScanNotice
+                  scanning={scanningDrives}
+                  error={driveScanError}
+                  onRescan={() => void refreshDrives()}
+                />
               )}
               {drives.map((d) => (
                 <button
@@ -334,6 +456,19 @@ export default function App(): JSX.Element {
                 </button>
               ))}
             </div>
+            {drives.length > 0 && (
+              <div className="drive-scan-actions" aria-live="polite">
+                <span>{scanningDrives ? 'Scanning for changes…' : `${drives.length} removable drive${drives.length === 1 ? '' : 's'} found`}</span>
+                <button
+                  type="button"
+                  className="ghost compact"
+                  disabled={scanningDrives}
+                  onClick={() => void refreshDrives()}
+                >
+                  Rescan
+                </button>
+              </div>
+            )}
             <div className="actions">
               <button type="button" className="ghost" onClick={reset}>Back</button>
               <button

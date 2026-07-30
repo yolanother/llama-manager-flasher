@@ -273,7 +273,22 @@ body:has(.card-nvidia:focus-within) {
   background: linear-gradient(160deg, rgba(255, 160, 47, 0.12), transparent), var(--panel);
   outline: none;
 }
-.empty { color: var(--muted); font-size: 13px; padding: 18px 6px; text-align: center; }
+.drive-scan-notice,
+.drive-scan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.drive-scan-notice { padding: 14px 6px; }
+.drive-scan-notice p { margin: 0; }
+.drive-scan-notice.scan-error { color: var(--danger); text-align: left; }
+.drive-scan-notice.scan-error strong { color: var(--text); }
+.drive-scan-notice.scan-error p { margin-top: 3px; }
+.drive-scan-actions { margin-top: 10px; }
+.ghost.compact { min-height: 36px; padding: 7px 12px; white-space: nowrap; }
 
 /* ── Confirm ────────────────────────────────────────────────── */
 
@@ -288,6 +303,8 @@ body:has(.card-nvidia:focus-within) {
 .warn-box.elev { border-color: rgba(255, 160, 47, 0.5); background: rgba(255, 160, 47, 0.08); }
 .warn-box p { margin: 0 0 8px; }
 .warn-box p:last-child { margin-bottom: 0; }
+.drive-permission { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.drive-permission strong { display: block; margin-bottom: 3px; }
 
 .confirm-label { display: block; margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
 .confirm-label code { color: var(--amber); user-select: text; }
