@@ -10,9 +10,11 @@
 // → done. All privileged work happens in the main process; this component
 // only sequences the IPC calls and renders progress. Elevation status is
 // surfaced before the confirm step so Windows/Linux users can relaunch the
-// app with the rights raw-device writes need.
+// app with the rights raw-device writes need. The titlebar reuses the approved
+// Llama Manager favicon artwork and exposes accessible custom window controls.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import brandIcon from './brand-icon.png';
 
 type Step = 'platform' | 'drive' | 'confirm' | 'progress' | 'done' | 'error';
 
@@ -51,25 +53,18 @@ function fmtSpeed(speed?: number): string {
   return `${fmtBytes(speed)}/s`;
 }
 
-/** The inline llama mark used in the header (mirrors build/icon.svg). */
-function LlamaMark({ size = 34 }: { size?: number }): JSX.Element {
+/** The approved Llama Manager favicon artwork used in the app titlebar. */
+function BrandMark({ size = 40 }: { size?: number }): JSX.Element {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <defs>
-        <linearGradient id="lm-bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#ed1c24" />
-          <stop offset="0.55" stopColor="#ff6a00" />
-          <stop offset="1" stopColor="#ffa02f" />
-        </linearGradient>
-      </defs>
-      <rect x="2" y="2" width="60" height="60" rx="15" fill="url(#lm-bg)" />
-      <g fill="#ffffff">
-        <path d="M24.4 24.5c-.6-4.7-2-8.2-3.8-10.5 3.9.6 6.9 3.4 8.2 7.7z" />
-        <path d="M39.6 24.5c.6-4.7 2-8.2 3.8-10.5-3.9.6-6.9 3.4-8.2 7.7z" />
-        <path d="M23.6 24.2c-.5 0-.8.4-.8 1v9.8c0 6.2 2.3 10 5.7 12.1l1.1 5.2c.2.9 1.5.9 1.7 0l.6-2.8h.8l.6 2.8c.2.9 1.5.9 1.7 0l1.1-5.2c3.4-2.1 5.7-5.9 5.7-12.1V25.2c0-.6-.3-1-.8-1z" />
-      </g>
-      <circle cx="44.5" cy="43" r="4.2" fill="#22c55e" stroke="#0a0a0a" strokeWidth="1.6" />
-    </svg>
+    <img
+      className="brand-mark"
+      src={brandIcon}
+      width={size}
+      height={size}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+    />
   );
 }
 
@@ -248,7 +243,7 @@ export default function App(): JSX.Element {
     <div className="shell">
       <header className="titlebar">
         <div className="brand">
-          <LlamaMark />
+          <BrandMark />
           <div>
             <h1>Llama Manager Flasher</h1>
             <p className="sub">Appliance image writer{version ? ` · v${version}` : ''}</p>

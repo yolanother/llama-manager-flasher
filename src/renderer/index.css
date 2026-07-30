@@ -32,22 +32,53 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
-  /* Layered top-to-bottom: warm accent glows, a readability scrim, the molten
-     backdrop image (gives the frosted-glass panels real texture to blur), then
-     the base color. The image is `fixed` so panels feel like they float over a
-     still scene rather than scrolling with content. */
-  background:
-    radial-gradient(1100px 500px at 80% -10%, rgba(237, 28, 36, 0.14), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(255, 160, 47, 0.10), transparent 60%),
-    linear-gradient(180deg, rgba(8, 6, 6, 0.62) 0%, rgba(8, 6, 6, 0.42) 45%, rgba(8, 6, 6, 0.58) 100%),
-    url(./app-bg.webp) center / cover no-repeat fixed,
-    var(--bg);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
+
+/* The scene starts intentionally neutral. A separate color-blend layer can
+   tint it without swapping images or forcing React renders during hover. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+body::before {
+  background:
+    linear-gradient(180deg, rgba(7, 7, 8, 0.64), rgba(7, 7, 8, 0.42) 45%, rgba(7, 7, 8, 0.62)),
+    url(./app-bg.webp) center / cover no-repeat;
+  filter: grayscale(1) saturate(0) contrast(1.06);
+}
+body::after {
+  background: var(--platform-tint, transparent);
+  mix-blend-mode: color;
+  opacity: var(--platform-tint-opacity, 0);
+  transition: opacity 0.24s ease, background-color 0.24s ease;
+}
+body:has(.card-amd:hover),
+body:has(.card-amd:focus-visible),
+body:has(.card-amd:focus-within) {
+  --platform-tint: rgba(237, 28, 36, 0.78);
+  --platform-tint-opacity: 0.78;
+}
+body:has(.card-nvidia:hover),
+body:has(.card-nvidia:focus-visible),
+body:has(.card-nvidia:focus-within) {
+  --platform-tint: rgba(118, 185, 0, 0.78);
+  --platform-tint-opacity: 0.78;
+}
+
+#root { position: relative; z-index: 1; }
 
 .shell {
   height: 100%;
@@ -68,6 +99,7 @@ body {
 }
 
 .brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { display: block; object-fit: contain; }
 .brand h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
 .brand .sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
 
@@ -348,3 +380,12 @@ body {
   background: var(--ok);
 }
 .done .actions { justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
