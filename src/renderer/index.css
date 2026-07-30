@@ -32,9 +32,15 @@ html, body, #root { height: 100%; }
 
 body {
   margin: 0;
+  /* Layered top-to-bottom: warm accent glows, a readability scrim, the molten
+     backdrop image (gives the frosted-glass panels real texture to blur), then
+     the base color. The image is `fixed` so panels feel like they float over a
+     still scene rather than scrolling with content. */
   background:
-    radial-gradient(1100px 500px at 80% -10%, rgba(237, 28, 36, 0.10), transparent 60%),
-    radial-gradient(900px 500px at -10% 110%, rgba(255, 160, 47, 0.07), transparent 60%),
+    radial-gradient(1100px 500px at 80% -10%, rgba(237, 28, 36, 0.14), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(255, 160, 47, 0.10), transparent 60%),
+    linear-gradient(180deg, rgba(8, 6, 6, 0.62) 0%, rgba(8, 6, 6, 0.42) 45%, rgba(8, 6, 6, 0.58) 100%),
+    url(./app-bg.webp) center / cover no-repeat fixed,
     var(--bg);
   color: var(--text);
   font-family: var(--font);
