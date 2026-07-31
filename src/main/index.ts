@@ -34,12 +34,6 @@ import { HelperClient } from './helperClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const helper = new HelperClient();
-
-// In dev (electron .), the first positional arg must be the app path.
-// When packaged, process.execPath IS the app binary, so no extra arg is needed.
-const helperBaseArgs = app.isPackaged ? ['--helper'] : [app.getAppPath(), '--helper'];
-
 const isHelperProcess = process.argv.includes('--helper');
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
@@ -98,6 +92,12 @@ if (isHelperProcess) {
   });
 } else {
   // ── Normal app mode ────────────────────────────────────────────────────────
+
+  const helper = new HelperClient();
+
+  // In dev (electron .), the first positional arg must be the app path.
+  // When packaged, process.execPath IS the app binary, so no extra arg is needed.
+  const helperBaseArgs = app.isPackaged ? ['--helper'] : [app.getAppPath(), '--helper'];
 
   app.whenReady().then(() => {
     createWindow();
