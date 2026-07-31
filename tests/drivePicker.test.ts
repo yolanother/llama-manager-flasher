@@ -32,6 +32,7 @@ describe('DriveScanNotice', () => {
     const html = renderToStaticMarkup(createElement(DriveScanNotice, {
       scanning: false,
       error: '',
+      diagnostics: null,
       onRescan: vi.fn(),
     }));
 
@@ -44,6 +45,7 @@ describe('DriveScanNotice', () => {
     const html = renderToStaticMarkup(createElement(DriveScanNotice, {
       scanning: false,
       error: 'Access denied',
+      diagnostics: null,
       onRescan: vi.fn(),
     }));
 
@@ -57,11 +59,36 @@ describe('DriveScanNotice', () => {
     const html = renderToStaticMarkup(createElement(DriveScanNotice, {
       scanning: true,
       error: '',
+      diagnostics: null,
       onRescan: vi.fn(),
     }));
 
     expect(html).toContain('Scanning for USB and microSD drives');
     expect(html).toContain('disabled');
+  });
+
+
+  it('distinguishes detected-but-rejected devices from no devices', () => {
+    const html = renderToStaticMarkup(createElement(DriveScanNotice, {
+      scanning: false,
+      error: '',
+      diagnostics: {
+        rawCandidateCount: 1,
+        normalizedCandidateCount: 1,
+        acceptedCandidateCount: 0,
+        elevated: false,
+        readyMs: 24,
+        rejections: [{
+          ...drive,
+          reason: 'larger than 2 TiB — almost certainly not a USB stick or SD card',
+        }],
+      },
+      onRescan: vi.fn(),
+    }));
+
+    expect(html).toContain('Devices detected, but none are safe flash targets');
+    expect(html).toContain('larger than 2 TiB');
+    expect(html).not.toContain('No removable drives found');
   });
 });
 
