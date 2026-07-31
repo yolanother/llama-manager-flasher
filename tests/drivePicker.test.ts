@@ -93,32 +93,28 @@ describe('DriveScanNotice', () => {
 });
 
 describe('DrivePermissionNotice', () => {
-  it('offers an administrator relaunch before Windows raw-drive access', () => {
+  it('offers to grant administrator access when the helper is not ready', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
-      elevation: {
-        platform: 'win32',
-        needsElevation: true,
-        helperReady: false,
-        manualHint: null,
-      },
-      onRelaunch: vi.fn(),
+      elevation: { platform: 'win32', needsElevation: true, helperReady: false, manualHint: null },
+      onGrant: vi.fn(),
     }));
-
     expect(html).toContain('Administrator access is required');
-    expect(html).toContain('Relaunch as administrator');
+    expect(html).toContain('Grant administrator access');
   });
 
-  it('stays hidden when Windows drive access is already elevated', () => {
+  it('stays hidden once the helper is connected', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
-      elevation: {
-        platform: 'win32',
-        needsElevation: false,
-        helperReady: true,
-        manualHint: null,
-      },
-      onRelaunch: vi.fn(),
+      elevation: { platform: 'win32', needsElevation: true, helperReady: true, manualHint: null },
+      onGrant: vi.fn(),
     }));
+    expect(html).toBe('');
+  });
 
+  it('stays hidden on macOS where no up-front elevation is needed', () => {
+    const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
+      elevation: { platform: 'darwin', needsElevation: false, helperReady: false, manualHint: null },
+      onGrant: vi.fn(),
+    }));
     expect(html).toBe('');
   });
 });

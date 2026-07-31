@@ -7,11 +7,11 @@
 // NVIDIA Spark EXPERIMENTAL) → target-drive picker (manual and automatic
 // rescans, removable-only list served by the main process) → destructive confirmation
 // (the user must type the device path) → download + flash + verify progress
-// → done. All privileged work happens in the main process; this component
-// only sequences the IPC calls and renders progress. Elevation status is
-// surfaced before the confirm step so Windows/Linux users can relaunch the
-// app with the rights raw-device writes need. The titlebar reuses the approved
-// Llama Manager favicon artwork and exposes accessible custom window controls.
+// → done. Privileged device writes run in a separate elevated helper process;
+// this component sequences IPC calls, renders progress, and surfaces an in-place
+// "Grant administrator access" flow so Windows users can connect the helper
+// without relaunching the whole app. The titlebar reuses the approved Llama
+// Manager favicon artwork and exposes accessible custom window controls.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import brandIcon from './brand-icon.png';
@@ -118,35 +118,28 @@ export function DriveScanNotice({ scanning, error, diagnostics, onRescan }: Driv
 interface DrivePermissionNoticeProps {
   /** Current main-process elevation status, or null while it is loading. */
   elevation: ElevationStatus | null;
-  /** Requests a UAC-elevated application relaunch. */
-  onRelaunch: () => void;
+  /** Requests the elevated helper to be spawned in-place. */
+  onGrant: () => void;
 }
 
 /**
- * Prompts Windows users for UAC elevation before they choose a flash target.
+ * Prompts users to grant administrator access before choosing a flash target.
+ * Hidden on platforms that do not require up-front elevation and once the
+ * elevated helper is connected.
  *
- * @param props - Current privilege status and elevated-relaunch callback.
- * @returns An actionable Windows notice, or null when it is not needed.
+ * @param props - Current privilege status and the grant-access callback.
+ * @returns An actionable notice, or null when elevation is not needed.
  */
-export function DrivePermissionNotice({
-  elevation,
-  onRelaunch,
-}: DrivePermissionNoticeProps): JSX.Element | null {
-  if (elevation?.platform !== 'win32' || !elevation.needsElevation) return null;
-
+export function DrivePermissionNotice({ elevation, onGrant }: DrivePermissionNoticeProps): JSX.Element | null {
+  if (!elevation || !elevation.needsElevation || elevation.helperReady) return null;
   return (
     <div className="warn-box elev drive-permission" role="status">
       <div>
         <strong>Administrator access is required</strong>
-        <p>Windows requires UAC approval before this app can write a USB stick or microSD card.</p>
+        <p>The flasher runs device writes in a separate elevated helper. Grant access to scan and flash — this window stays open.</p>
       </div>
-      {!elevation.helperReady ? (
-        <button type="button" className="ghost compact" onClick={onRelaunch}>
-          Relaunch as administrator
-        </button>
-      ) : (
-        <p className="hint">{elevation.manualHint ?? 'Close the app, then run it as administrator.'}</p>
-      )}
+      <button type="button" className="ghost compact" onClick={onGrant}>Grant administrator access</button>
+      {elevation.manualHint && <p className="hint">{elevation.manualHint}</p>}
     </div>
   );
 }
@@ -347,6 +340,7 @@ export default function App(): JSX.Element {
       setDrives(result.drives);
       setDriveScanDiagnostics(result.diagnostics);
       setDrive((selected) => reconcileSelectedDrive(selected, result.drives));
+      void window.llamaFlasher.elevation.status().then(setElevation);
     } catch (scanError) {
       if (sequence !== scanSequence.current) return;
       setDriveScanError(scanError instanceof Error ? scanError.message : String(scanError));
@@ -515,12 +509,24 @@ export default function App(): JSX.Element {
     void window.llamaFlasher.elevation.status().then(setElevation);
   }, []);
 
+  const grantAccess = useCallback(async () => {
+    try {
+      await window.llamaFlasher.elevation.ensureHelper();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStep('error');
+      return;
+    }
+    void window.llamaFlasher.elevation.status().then(setElevation);
+    void refreshDrives();
+  }, [refreshDrives]);
+
+  const helperReady = elevation?.helperReady ?? false;
+
   const confirmReady = useMemo(
     () => drive != null && typed.trim() === drive.device,
     [drive, typed],
   );
-
-  const needsElevation = elevation != null && elevation.needsElevation;
 
   return (
     <div className="shell" data-platform={platformDataValue(image, manifestLoading)}>
@@ -606,7 +612,7 @@ export default function App(): JSX.Element {
             </p>
             <DrivePermissionNotice
               elevation={elevation}
-              onRelaunch={() => void window.llamaFlasher.elevation.ensureHelper()}
+              onGrant={() => void grantAccess()}
             />
             {!isLocalImage(image) && image.channel === 'experimental' && (
               <p className="warn-box">
@@ -671,24 +677,6 @@ export default function App(): JSX.Element {
               Everything on <strong>{drive.description}</strong> ({drive.device},{' '}
               {fmtBytes(drive.size)}) will be <strong>permanently erased</strong>.
             </p>
-            {needsElevation && (
-              <div className="warn-box elev">
-                <p>
-                  Writing to a raw device needs {elevation?.platform === 'win32' ? 'administrator' : 'root'} rights.
-                </p>
-                {elevation != null && !elevation.helperReady ? (
-                  <button
-                    type="button"
-                    className="ghost"
-                    onClick={() => void window.llamaFlasher.elevation.ensureHelper()}
-                  >
-                    Relaunch elevated
-                  </button>
-                ) : (
-                  <p className="hint">{elevation?.manualHint ?? 'Restart the app with elevated rights.'}</p>
-                )}
-              </div>
-            )}
             <label className="confirm-label" htmlFor="confirm-input">
               Type <code>{drive.device}</code> to confirm:
             </label>
@@ -708,7 +696,7 @@ export default function App(): JSX.Element {
               <button
                 type="button"
                 className="danger"
-                disabled={!confirmReady || (needsElevation && elevation?.platform !== 'darwin')}
+                disabled={!confirmReady || !helperReady}
                 onClick={() => void startFlash()}
               >
                 Flash it
