@@ -59,6 +59,8 @@ interface DriveScanNoticeProps {
   scanning: boolean;
   /** User-facing enumeration error, or an empty string after a successful scan. */
   error: string;
+  /** Sanitized counts and rejection reasons from the main process. */
+  diagnostics: DriveScanDiagnostics | null;
   /** Requests an immediate drive enumeration. */
   onRescan: () => void;
 }
@@ -69,7 +71,7 @@ interface DriveScanNoticeProps {
  * @param props - Current scanner state and the callback used to rescan.
  * @returns Status content for the otherwise-empty removable-drive list.
  */
-export function DriveScanNotice({ scanning, error, onRescan }: DriveScanNoticeProps): JSX.Element {
+export function DriveScanNotice({ scanning, error, diagnostics, onRescan }: DriveScanNoticeProps): JSX.Element {
   if (scanning) {
     return (
       <div className="drive-scan-notice" role="status" aria-live="polite">
@@ -91,6 +93,19 @@ export function DriveScanNotice({ scanning, error, onRescan }: DriveScanNoticePr
     );
   }
 
+  if (diagnostics && diagnostics.rawCandidateCount > 0 && diagnostics.acceptedCandidateCount === 0) {
+    return (
+      <div className="drive-scan-notice scan-error" role="status">
+        <div>
+          <strong>Devices detected, but none are safe flash targets</strong>
+          {diagnostics.rejections.map((rejection) => (
+            <p key={rejection.device}>{rejection.description}: {rejection.reason}</p>
+          ))}
+        </div>
+        <button type="button" className="ghost compact" onClick={onRescan}>Rescan</button>
+      </div>
+    );
+  }
   return (
     <div className="drive-scan-notice" role="status">
       <p>No removable drives found. Insert a USB stick or microSD card.</p>
@@ -205,15 +220,106 @@ function WindowControls(): JSX.Element {
   );
 }
 
+
+/** Stable platform value used by the shell backdrop across every wizard step. */
+export function platformDataValue(
+  image: ApplianceImage | LocalImage | Pick<ApplianceImage, 'platformId'> | null,
+  loading: 'amd' | 'nvidia-spark' | null,
+): 'amd' | 'nvidia-spark' | undefined {
+  const platformId = image != null && 'platformId' in image ? image.platformId : undefined;
+  return platformId ?? loading ?? undefined;
+}
+
+/**
+ * Discriminates a user-chosen local image from a downloaded appliance image.
+ *
+ * @param image - The current selection, or null.
+ * @returns True when the selection is a local file flashed without downloading.
+ */
+export function isLocalImage(image: ApplianceImage | LocalImage | null): image is LocalImage {
+  return image != null && 'kind' in image && image.kind === 'local';
+}
+
+/** Props for the platform-page "flash an already-downloaded image" affordance. */
+interface LocalImagePickerProps {
+  /** The chosen file, or null before one is picked. */
+  selection: LocalImageSelection | null;
+  /** Current expected-SHA-256 input value. */
+  sha: string;
+  /** True while a platform manifest or file dialog is resolving. */
+  busy: boolean;
+  /** Opens the native file picker. */
+  onChoose: () => void;
+  /** Updates the optional expected-checksum field. */
+  onShaChange: (value: string) => void;
+  /** Discards the current selection so a different file can be picked. */
+  onClear: () => void;
+  /** Accepts the selection and advances to the drive picker. */
+  onContinue: () => void;
+}
+
+/**
+ * Lets the user flash an image already on disk instead of downloading one.
+ *
+ * @param props - The current selection, optional checksum, and callbacks.
+ * @returns The secondary picker shown below the platform cards.
+ */
+export function LocalImagePicker({
+  selection,
+  sha,
+  busy,
+  onChoose,
+  onShaChange,
+  onClear,
+  onContinue,
+}: LocalImagePickerProps): JSX.Element {
+  return (
+    <div className="local-image">
+      <p className="hint local-image-lead">Already downloaded an image?</p>
+      {selection == null ? (
+        <button type="button" className="ghost compact" onClick={onChoose} disabled={busy}>
+          Choose a downloaded image…
+        </button>
+      ) : (
+        <div className="local-image-details">
+          <div className="local-image-file">
+            <strong>{selection.file}</strong>
+            <span>{fmtBytes(selection.size)}</span>
+          </div>
+          <label className="local-sha-label" htmlFor="local-sha">
+            Expected SHA-256 <span className="local-sha-optional">(optional)</span>
+          </label>
+          <input
+            id="local-sha"
+            className="confirm-input local-sha-input"
+            value={sha}
+            onChange={(e) => onShaChange(e.target.value)}
+            placeholder="Paste to verify before writing…"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <div className="actions">
+            <button type="button" className="ghost" onClick={onClear}>Choose a different file</button>
+            <button type="button" className="primary" onClick={onContinue}>Continue</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 /** Root wizard component. */
 export default function App(): JSX.Element {
   const [step, setStep] = useState<Step>('platform');
-  const [image, setImage] = useState<ApplianceImage | null>(null);
+  const [image, setImage] = useState<ApplianceImage | LocalImage | null>(null);
   const [manifestLoading, setManifestLoading] = useState<'amd' | 'nvidia-spark' | null>(null);
+  const [localSelection, setLocalSelection] = useState<LocalImageSelection | null>(null);
+  const [localSha, setLocalSha] = useState('');
+  const [choosingImage, setChoosingImage] = useState(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [drive, setDrive] = useState<DriveInfo | null>(null);
   const [scanningDrives, setScanningDrives] = useState(false);
   const [driveScanError, setDriveScanError] = useState('');
+  const [driveScanDiagnostics, setDriveScanDiagnostics] = useState<DriveScanDiagnostics | null>(null);
   const [typed, setTyped] = useState('');
   const [elevation, setElevation] = useState<ElevationStatus | null>(null);
   const [phase, setPhase] = useState<ProgressPhase>('download');
@@ -236,10 +342,11 @@ export default function App(): JSX.Element {
     setScanningDrives(true);
     setDriveScanError('');
     try {
-      const refreshed = await window.llamaFlasher.devices.list();
+      const result = await window.llamaFlasher.devices.list();
       if (sequence !== scanSequence.current) return;
-      setDrives(refreshed);
-      setDrive((selected) => reconcileSelectedDrive(selected, refreshed));
+      setDrives(result.drives);
+      setDriveScanDiagnostics(result.diagnostics);
+      setDrive((selected) => reconcileSelectedDrive(selected, result.drives));
     } catch (scanError) {
       if (sequence !== scanSequence.current) return;
       setDriveScanError(scanError instanceof Error ? scanError.message : String(scanError));
@@ -275,11 +382,53 @@ export default function App(): JSX.Element {
     }
   }, []);
 
+  // Opens the native picker for an already-downloaded image. A cancelled
+  // dialog resolves to null and leaves any prior selection untouched.
+  const chooseLocalImage = useCallback(async () => {
+    setChoosingImage(true);
+    setError('');
+    try {
+      const picked = await window.llamaFlasher.image.choose();
+      if (picked) {
+        setLocalSelection(picked);
+        setLocalSha('');
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setStep('error');
+    } finally {
+      setChoosingImage(false);
+    }
+  }, []);
+
+  const clearLocalImage = useCallback(() => {
+    setLocalSelection(null);
+    setLocalSha('');
+  }, []);
+
+  // Promotes the chosen file to the active image and enters the drive picker,
+  // reusing the same destructive-confirmation flow as a downloaded image.
+  const continueWithLocalImage = useCallback(() => {
+    if (!localSelection) return;
+    setImage({
+      kind: 'local',
+      file: localSelection.file,
+      size: localSelection.size,
+      path: localSelection.path,
+      sha256: localSha.trim(),
+    });
+    setStep('drive');
+  }, [localSelection, localSha]);
+
   const startFlash = useCallback(async () => {
     if (!image || !drive || flashing.current) return;
     flashing.current = true;
     setStep('progress');
-    setPhase('download');
+    // A local image skips the download; a verified one starts at the checksum.
+    const startingPhase: ProgressPhase = isLocalImage(image)
+      ? (image.sha256 ? 'checksum' : 'write')
+      : 'download';
+    setPhase(startingPhase);
     setPct(0);
     setSpeed('');
     setDetail('');
@@ -310,12 +459,29 @@ export default function App(): JSX.Element {
     });
 
     try {
-      const imagePath = await window.llamaFlasher.image.download({
-        url: image.url,
-        file: image.file,
-        sha256: image.sha256,
-        size: image.size,
-      });
+      let imagePath: string;
+      if (isLocalImage(image)) {
+        // No download — flash the file the user already has. When they supplied
+        // an expected hash, verify it first; otherwise go straight to the write.
+        if (image.sha256) {
+          setPhase('checksum');
+          setPct(100);
+          setDetail('Computing SHA-256…');
+          imagePath = await window.llamaFlasher.image.verifyLocal({
+            path: image.path,
+            sha256: image.sha256,
+          });
+        } else {
+          imagePath = image.path;
+        }
+      } else {
+        imagePath = await window.llamaFlasher.image.download({
+          url: image.url,
+          file: image.file,
+          sha256: image.sha256,
+          size: image.size,
+        });
+      }
       setPhase('write');
       setPct(0);
       setSpeed('');
@@ -343,6 +509,9 @@ export default function App(): JSX.Element {
     setDrive(null);
     setTyped('');
     setError('');
+    setDriveScanDiagnostics(null);
+    setLocalSelection(null);
+    setLocalSha('');
     void window.llamaFlasher.elevation.status().then(setElevation);
   }, []);
 
@@ -354,7 +523,7 @@ export default function App(): JSX.Element {
   const needsElevation = elevation != null && !elevation.elevated;
 
   return (
-    <div className="shell">
+    <div className="shell" data-platform={platformDataValue(image, manifestLoading)}>
       <header className="titlebar">
         <div className="brand">
           <BrandMark />
@@ -414,6 +583,15 @@ export default function App(): JSX.Element {
                 </span>
               </button>
             </div>
+            <LocalImagePicker
+              selection={localSelection}
+              sha={localSha}
+              busy={manifestLoading != null || choosingImage}
+              onChoose={() => void chooseLocalImage()}
+              onShaChange={setLocalSha}
+              onClear={clearLocalImage}
+              onContinue={continueWithLocalImage}
+            />
           </section>
         )}
 
@@ -421,14 +599,16 @@ export default function App(): JSX.Element {
           <section className="panel" aria-label="Choose the target drive">
             <h2>Choose the target drive</h2>
             <p className="hint">
-              Flashing <strong>{image.file}</strong> ({fmtBytes(image.size)}, v{image.version})
-              {image.channel === 'experimental' && <span className="chip chip-exp inline">Experimental</span>}
+              Flashing <strong>{image.file}</strong> ({fmtBytes(image.size)}{!isLocalImage(image) && `, v${image.version}`})
+              {!isLocalImage(image) && image.channel === 'experimental' && (
+                <span className="chip chip-exp inline">Experimental</span>
+              )}
             </p>
             <DrivePermissionNotice
               elevation={elevation}
               onRelaunch={() => void window.llamaFlasher.elevation.relaunch()}
             />
-            {image.channel === 'experimental' && (
+            {!isLocalImage(image) && image.channel === 'experimental' && (
               <p className="warn-box">
                 This build is unvalidated on hardware. Use it only if you know what you are doing.
               </p>
@@ -438,6 +618,7 @@ export default function App(): JSX.Element {
                 <DriveScanNotice
                   scanning={scanningDrives}
                   error={driveScanError}
+                  diagnostics={driveScanDiagnostics}
                   onRescan={() => void refreshDrives()}
                 />
               )}
@@ -540,11 +721,20 @@ export default function App(): JSX.Element {
           <section className="panel" aria-label="Flashing progress" aria-live="polite">
             <h2>{PHASE_LABELS[phase]}</h2>
             <div className="phase-row">
-              {(Object.keys(PHASE_LABELS) as ProgressPhase[]).map((p) => (
-                <span key={p} className={`phase ${p === phase ? 'active' : ''}`}>
-                  {PHASE_LABELS[p]}
-                </span>
-              ))}
+              {(Object.keys(PHASE_LABELS) as ProgressPhase[])
+                .filter((p) => {
+                  // A local image never downloads; it only shows a checksum
+                  // phase when the user supplied an expected hash to verify.
+                  if (!isLocalImage(image)) return true;
+                  if (p === 'download') return false;
+                  if (p === 'checksum') return image.sha256 !== '';
+                  return true;
+                })
+                .map((p) => (
+                  <span key={p} className={`phase ${p === phase ? 'active' : ''}`}>
+                    {PHASE_LABELS[p]}
+                  </span>
+                ))}
             </div>
             <div className="bar" role="progressbar" aria-valuenow={Math.round(pct)} aria-valuemin={0} aria-valuemax={100}>
               <div className="bar-fill" style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />

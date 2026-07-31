@@ -34,6 +34,18 @@ interface DriveInfo {
   isRemovable: boolean;
   mountpoints: string[];
 }
+interface DriveScanResult {
+  drives: DriveInfo[];
+  diagnostics: {
+    rawCandidateCount: number;
+    normalizedCandidateCount: number;
+    acceptedCandidateCount: number;
+    elevated: boolean;
+    readyMs: number;
+    rejections: Array<DriveInfo & { reason: string }>;
+  };
+}
+
 
 /** Download progress event forwarded from the main process. */
 interface DownloadProgress {
@@ -74,11 +86,15 @@ const api = {
       ipcRenderer.invoke('manifest:fetch', args),
   },
   devices: {
-    list: (): Promise<DriveInfo[]> => ipcRenderer.invoke('devices:list'),
+    list: (): Promise<DriveScanResult> => ipcRenderer.invoke('devices:list'),
   },
   image: {
     download: (args: { url: string; file: string; sha256: string; size: number | null }): Promise<string> =>
       ipcRenderer.invoke('image:download', args),
+    choose: (): Promise<{ path: string; file: string; size: number | null } | null> =>
+      ipcRenderer.invoke('image:choose'),
+    verifyLocal: (args: { path: string; sha256: string }): Promise<string> =>
+      ipcRenderer.invoke('image:verifyLocal', args),
     onProgress: (cb: (p: DownloadProgress) => void) => {
       const handler = (_e: unknown, p: DownloadProgress) => cb(p);
       ipcRenderer.on('image:download:progress', handler);

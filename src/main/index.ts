@@ -14,8 +14,9 @@
 // internal disk. This is a portable one-shot tool: there is deliberately no
 // auto-updater.
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   parseAmdSha256Sums,
@@ -28,8 +29,14 @@ import {
   dispatchWindowControl,
   type WindowControl,
 } from '../shared/windowControls.js';
-import { downloadImage, type DownloadProgress } from './download.js';
-import { scanSafeDrives, type DriveInfo, type ScannerLike } from './driveScanner.js';
+import { downloadImage, sha256File, type DownloadProgress } from './download.js';
+import {
+  normalizeDriveCandidate,
+  scanSafeDrives,
+  waitForScannerReady,
+  type DriveScanResult,
+  type ScannerLike,
+} from './driveScanner.js';
 import { getElevationStatus, relaunchElevated } from './elevation.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -155,9 +162,11 @@ async function loadScanner() {
   return new sdk.scanner.Scanner(adapters);
 }
 
-ipcMain.handle('devices:list', async (): Promise<DriveInfo[]> => {
+ipcMain.handle('devices:list', async (): Promise<DriveScanResult> => {
   const scanner = await loadScanner() as ScannerLike;
-  return scanSafeDrives(scanner);
+  const result = await scanSafeDrives(scanner, { elevated: getElevationStatus().elevated });
+  console.info('[device-scan]', JSON.stringify(result.diagnostics));
+  return result;
 });
 
 /* ─────────────────────────────────────────────────────────────────
@@ -173,6 +182,51 @@ ipcMain.handle('image:download', async (event, args: { url: string; file: string
     cacheDir: CACHE_DIR,
     onProgress: (p: DownloadProgress) => event.sender.send('image:download:progress', p),
   });
+});
+
+/* ─────────────────────────────────────────────────────────────────
+   IPC: local image selection (choose from disk + optional verify)
+   ─────────────────────────────────────────────────────────────── */
+
+// Opens the native file picker so the user can flash an image they already
+// downloaded. Only a user-selected path leaves this handler; flash:start
+// already accepts an arbitrary imagePath, so this grants no new privilege.
+ipcMain.handle('image:choose', async (): Promise<{ path: string; file: string; size: number | null } | null> => {
+  const options: Electron.OpenDialogOptions = {
+    title: 'Choose a downloaded appliance image',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Disk images', extensions: ['iso', 'img', 'xz'] },
+      { name: 'All files', extensions: ['*'] },
+    ],
+  };
+  const result = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  const chosen = result.filePaths[0];
+  let size: number | null = null;
+  try {
+    size = (await fs.stat(chosen)).size;
+  } catch {
+    /* size stays null — the file is still flashable */
+  }
+  return { path: chosen, file: path.basename(chosen), size };
+});
+
+// Optional pre-write checksum for a user-chosen image. Reuses the download
+// module's streaming hash and reports a single verifying event so the renderer
+// can surface the "Verifying checksum" phase. Throws on mismatch so a bad file
+// never reaches the writer.
+ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: string }): Promise<string> => {
+  const expected = args.sha256.trim().toLowerCase();
+  const st = await fs.stat(args.path);
+  event.sender.send('image:download:progress', { phase: 'verifying', bytes: st.size, total: st.size });
+  const actual = (await sha256File(args.path)).toLowerCase();
+  if (actual !== expected) {
+    throw new Error(`sha256 mismatch: expected ${expected}, got ${actual}`);
+  }
+  return args.path;
 });
 
 /* ─────────────────────────────────────────────────────────────────
@@ -197,8 +251,7 @@ ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePat
   // Re-enumerate-and-match: etcher-sdk gets its own freshly scanned drive
   // object, never one constructed from renderer input.
   const scanner = await loadScanner();
-  await scanner.start();
-  await new Promise((r) => setTimeout(r, 250));
+  await waitForScannerReady(scanner as ScannerLike);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const target = Array.from(scanner.drives.values() as Iterable<any>)
     .find((d) => d.device === args.devicePath);
@@ -208,15 +261,10 @@ ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePat
   }
 
   // Safety rails re-checked in the main process at the last moment.
-  const rejection = driveRejectionReason({
-    device: target.device,
-    description: target.description ?? '',
-    size: target.size ?? null,
-    isSystem: !!target.isSystem,
-    isUSB: !!target.isUSB,
-    isCard: !!target.isCard,
-    isRemovable: !!target.isRemovable,
-  });
+  const normalizedTarget = normalizeDriveCandidate(target);
+  const rejection = normalizedTarget == null
+    ? 'missing device path — cannot safely identify the target'
+    : driveRejectionReason(normalizedTarget);
   if (rejection) {
     scanner.stop();
     throw new Error(`refusing to flash ${args.devicePath}: ${rejection}`);

@@ -78,6 +78,15 @@ body:has(.card-nvidia:focus-within) {
   --platform-tint-opacity: 0.78;
 }
 
+
+body:has(.shell[data-platform="amd"]) {
+  --platform-tint: rgba(237, 28, 36, 0.78);
+  --platform-tint-opacity: 0.78;
+}
+body:has(.shell[data-platform="nvidia-spark"]) {
+  --platform-tint: rgba(118, 185, 0, 0.78);
+  --platform-tint-opacity: 0.78;
+}
 #root { position: relative; z-index: 1; }
 
 .shell {
@@ -241,6 +250,37 @@ body:has(.card-nvidia:focus-within) {
 .chip.inline { margin-left: 8px; vertical-align: middle; }
 .chip-stable { background: rgba(34, 197, 94, 0.16); color: var(--ok); }
 .chip-exp { background: rgba(118, 185, 0, 0.18); color: var(--nvidia); }
+
+/* ── Local image picker ─────────────────────────────────────── */
+
+.local-image {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--panel-border);
+}
+.local-image-lead { margin: 0 0 10px; }
+.local-image-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  box-shadow: inset 0 1px 0 var(--panel-highlight);
+}
+.local-image-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.local-image-file strong { font-size: 15px; word-break: break-all; }
+.local-image-file span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.local-sha-label { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); }
+.local-sha-optional { opacity: 0.7; }
+.local-sha-input { font-size: 12.5px; }
+.local-image-details .actions { margin-top: 6px; }
 
 /* ── Drive picker ───────────────────────────────────────────── */
 

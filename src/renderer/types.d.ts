@@ -19,6 +19,23 @@ interface ApplianceImage {
   size: number | null;
 }
 
+/** A user-chosen image file on disk, flashed instead of downloading one. */
+interface LocalImage {
+  kind: 'local';
+  file: string;
+  size: number | null;
+  path: string;
+  /** Expected lowercase-hex SHA-256 to verify before writing, '' when none. */
+  sha256: string;
+}
+
+/** Result of the native "choose a downloaded image" file dialog. */
+interface LocalImageSelection {
+  path: string;
+  file: string;
+  size: number | null;
+}
+
 /** Drive metadata as offered by the main-process target scanner. */
 interface DriveInfo {
   device: string;
@@ -30,6 +47,20 @@ interface DriveInfo {
   isRemovable: boolean;
   mountpoints: string[];
 }
+interface DriveScanDiagnostics {
+  rawCandidateCount: number;
+  normalizedCandidateCount: number;
+  acceptedCandidateCount: number;
+  elevated: boolean;
+  readyMs: number;
+  rejections: Array<DriveInfo & { reason: string }>;
+}
+
+interface DriveScanResult {
+  drives: DriveInfo[];
+  diagnostics: DriveScanDiagnostics;
+}
+
 
 /** Download progress event forwarded from the main process. */
 interface DownloadProgress {
@@ -69,10 +100,12 @@ interface LlamaFlasherBridge {
     fetch(args: { platformId: 'amd' | 'nvidia-spark' }): Promise<ApplianceImage>;
   };
   devices: {
-    list(): Promise<DriveInfo[]>;
+    list(): Promise<DriveScanResult>;
   };
   image: {
     download(args: { url: string; file: string; sha256: string; size: number | null }): Promise<string>;
+    choose(): Promise<LocalImageSelection | null>;
+    verifyLocal(args: { path: string; sha256: string }): Promise<string>;
     onProgress(cb: (p: DownloadProgress) => void): () => void;
   };
   flash: {
