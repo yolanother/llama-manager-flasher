@@ -4,15 +4,14 @@
 // governed by the LICENSE file in the repository root.
 //
 // Owns the privileged side of the flasher: fetching and normalizing the
-// appliance release manifests, enumerating candidate USB / microSD targets,
-// downloading the ISO with resume + SHA-256 verification, and writing it to
-// the chosen device via etcher-sdk with post-write verification. The renderer
-// never touches devices or the network directly — it talks to this process
-// through the narrow IPC surface defined in preload/index.cts. Every safety
-// rail (removable-only, 2 TiB cap, re-enumerate-and-match, typed destructive
-// confirmation) is enforced HERE, so a renderer bug can never write to an
-// internal disk. This is a portable one-shot tool: there is deliberately no
-// auto-updater.
+// appliance release manifests, and enumerating candidate USB / microSD targets.
+// On Windows and Linux, delegates device writing to an elevated helper process.
+// The renderer never touches devices or the network directly — it talks to this
+// process through the narrow IPC surface defined in preload/index.cts. Every
+// safety rail (removable-only, 2 TiB cap, re-enumerate-and-match, typed
+// destructive confirmation) is enforced HERE or delegated, so a renderer bug
+// can never write to an internal disk. This is a portable one-shot tool: there
+// is deliberately no auto-updater.
 
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
