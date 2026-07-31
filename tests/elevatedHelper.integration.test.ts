@@ -1,3 +1,11 @@
+// Llama Manager Flasher — elevated-helper contract tests.
+//
+// Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+// governed by the LICENSE file in the repository root.
+//
+// Source-level contract tests that lock the launcher/helper process split
+// (etcher-sdk only in the helper) and the token-gated loopback control channel.
+
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';

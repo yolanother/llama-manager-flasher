@@ -1,3 +1,10 @@
+// Llama Manager Flasher — helper-protocol tests.
+//
+// Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+// governed by the LICENSE file in the repository root.
+//
+// Framing/encoding tests for the launcher↔helper control-channel protocol.
+
 import { describe, expect, it } from 'vitest';
 import { encodeMessage, createFramer } from '../src/shared/helperProtocol.js';
 
