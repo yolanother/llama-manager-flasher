@@ -24,7 +24,7 @@ describe('elevated helper integration', () => {
     const client = source('src/main/helperClient.ts');
     expect(client).toContain("'127.0.0.1'");
     expect(client).toContain('randomBytes(32)');
-    expect(client).toContain("auth.token === this.token");
+    expect(client).toContain("timingSafeEqual");
     const helper = source('src/helper/index.ts');
     expect(helper).toContain("type: 'auth'");
     expect(helper).toContain('--token-file');

@@ -52,6 +52,7 @@
     ],
     "asar": true,
     "asarUnpack": [
+      "dist/helper/**",
       "**/*.node",
       "**/node_modules/**/{@ronomon/direct-io,drivelist,mountutils,usb,winusb-driver-generator,lzma-native,xxhash-addon}/**"
     ],

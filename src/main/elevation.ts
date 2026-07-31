@@ -1,15 +1,14 @@
-// Llama Manager Flasher — privilege detection and self-elevation.
+// Llama Manager Flasher — privilege detection and elevated-helper launcher.
 //
 // Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
 // governed by the LICENSE file in the repository root.
 //
-// Raw block-device writes need administrator/root rights on Windows and
-// Linux. This module detects whether the current process is privileged and,
-// when it is not, relaunches the app elevated: Windows uses PowerShell's
-// Start-Process -Verb RunAs (UAC prompt), Linux uses pkexec (polkit prompt,
-// forwarding DISPLAY/XAUTHORITY/WAYLAND_DISPLAY so the GUI still opens) with
-// a sudo instruction as the fallback when pkexec is absent. macOS needs no
-// relaunch: etcher-sdk opens devices through Apple's authopen(1), which
+// Raw block-device writes need administrator/root rights on Windows and Linux.
+// This module detects whether the current process is privileged
+// (getElevationStatus) and builds the per-OS command to spawn the elevated
+// HELPER process (buildHelperLaunch): Windows uses PowerShell's Start-Process
+// -Verb RunAs (UAC prompt), Linux uses pkexec (polkit prompt). macOS needs no
+// elevation: etcher-sdk opens devices through Apple's authopen(1), which
 // prompts for authorization per device.
 
 import { spawnSync } from 'node:child_process';
@@ -127,4 +126,3 @@ export function buildHelperLaunch(
   // darwin (and any other unix): no up-front elevation; authopen prompts per device.
   return { command: opts.execPath, args: helperArgs, elevated: false };
 }
-

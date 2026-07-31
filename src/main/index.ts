@@ -35,7 +35,7 @@ import { HelperClient } from './helperClient.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Absolute path to the compiled helper entry shipped alongside main. */
-const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js');
+const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 const helper = new HelperClient();
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
@@ -217,9 +217,8 @@ ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: 
 
 ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePath: string; typedConfirmation: string }) => {
   await helper.ensure(process.execPath, HELPER_SCRIPT);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return helper.request(
-    { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation } as any,
+    { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation },
     (p) => event.sender.send('flash:progress', p),
   );
 });

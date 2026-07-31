@@ -5,7 +5,9 @@
 //
 // Pure, dependency-free wire format for the launcher <-> elevated-helper
 // channel: newline-delimited JSON. The launcher sends HelperCommand; the helper
-// replies with HelperReply. The first line the helper sends is AuthMessage.
+// replies with HelperReply. The first message the helper sends after connecting
+// is AuthMessage — it carries the token so the launcher can identify the helper.
+// Auth enforcement lives in the launcher (helperClient.ts), not here.
 
 /** First line the helper sends after connecting; proves it holds the token. */
 export interface AuthMessage {

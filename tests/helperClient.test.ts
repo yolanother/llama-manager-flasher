@@ -44,4 +44,14 @@ describe('HelperClient', () => {
     expect(client.isConnected()).toBe(false);
     bad.destroy();
   });
+
+  it('dedupes concurrent ensure() into a single spawn', async () => {
+    let spawns = 0;
+    const fakeSpawn = (() => { spawns++; return { kill() {}, exitCode: null, once() {} } as any; }) as any;
+    client = new HelperClient(fakeSpawn);
+    const p1 = client.ensure('exe', 'script', 300).catch(() => {});
+    const p2 = client.ensure('exe', 'script', 300).catch(() => {});
+    await Promise.all([p1, p2]);
+    expect(spawns).toBe(1);
+  });
 });

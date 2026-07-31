@@ -10,17 +10,20 @@
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { buildHelperLaunch, type HelperLaunchPlan } from './elevation.js';
 import {
   createFramer,
+  encodeMessage,
   type HelperCommand,
   type HelperFlashProgress,
   type HelperReply,
 } from '../shared/helperProtocol.js';
-import { encodeMessage } from '../shared/helperProtocol.js';
+
+/** Allows Omit to distribute over union members. */
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 interface Pending {
   resolve: (result: unknown) => void;
@@ -35,6 +38,10 @@ export class HelperClient {
   private child: ChildProcess | null = null;
   private nextId = 1;
   private pending = new Map<number, Pending>();
+  private onConnect?: () => void;
+  private ensuring?: Promise<void>;
+
+  constructor(private readonly spawnFn: typeof nodeSpawn = nodeSpawn) {}
 
   /** Starts the loopback control server and returns the bound port. */
   listen(): Promise<number> {
@@ -51,6 +58,9 @@ export class HelperClient {
 
   /** Authenticates a new connection by its first line, then wires it active. */
   handleConnection(socket: net.Socket): void {
+    // Reject racing connections once the real helper is already active.
+    if (this.active) { socket.destroy(); return; }
+
     const framer = createFramer();
     let authed = false;
     socket.setEncoding('utf8');
@@ -64,10 +74,17 @@ export class HelperClient {
       }
       for (const message of messages) {
         if (!authed) {
-          const auth = message as { type?: string; token?: string };
-          if (auth.type === 'auth' && auth.token === this.token) {
+          const auth = message as { type?: string; token?: unknown };
+          const provided = Buffer.from(String(auth.token ?? ''), 'utf8');
+          const expected = Buffer.from(this.token, 'utf8');
+          const authOk =
+            auth.type === 'auth' &&
+            provided.length === expected.length &&
+            timingSafeEqual(provided, expected);
+          if (authOk) {
             authed = true;
             this.active = socket;
+            this.onConnect?.();
           } else {
             socket.destroy();
             return;
@@ -85,11 +102,6 @@ export class HelperClient {
     socket.on('error', () => socket.destroy());
   }
 
-  /** Test helper: wire an already-constructed socket as the active connection. */
-  acceptForTest(socket: net.Socket): void {
-    this.handleConnection(socket);
-  }
-
   private onReply(reply: HelperReply): void {
     const pending = this.pending.get(reply.id);
     if (!pending) return;
@@ -104,7 +116,7 @@ export class HelperClient {
   }
 
   /** Sends a command and resolves with its result (rejects on helper error). */
-  request(command: Omit<HelperCommand, 'id'>, onProgress?: (p: HelperFlashProgress) => void): Promise<unknown> {
+  request(command: DistributiveOmit<HelperCommand, 'id'>, onProgress?: (p: HelperFlashProgress) => void): Promise<unknown> {
     const socket = this.active;
     if (!socket) return Promise.reject(new Error('helper is not connected'));
     const id = this.nextId++;
@@ -115,35 +127,47 @@ export class HelperClient {
   }
 
   /** Spawns the elevated helper and resolves once it authenticates. */
-  async ensure(execPath: string, helperScript: string, timeoutMs = 120_000): Promise<void> {
-    if (this.isConnected()) return;
-    if (!this.server) await this.listen();
-    const port = (this.server!.address() as net.AddressInfo).port;
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lmf-helper-'));
-    const tokenFile = path.join(dir, 'token');
-    const wrapperPath = path.join(dir, 'helper.cmd');
-    await fs.writeFile(tokenFile, this.token, { mode: 0o600 });
-    const plan: HelperLaunchPlan = buildHelperLaunch(process.platform, {
-      execPath, helperScript, port, tokenFile, wrapperPath,
-    });
-    if (plan.wrapperScript) await fs.writeFile(plan.wrapperScript.path, plan.wrapperScript.content);
-    this.child = nodeSpawn(plan.command, plan.args, { detached: false, stdio: 'ignore' });
-    await this.waitForConnection(timeoutMs);
+  ensure(execPath: string, helperScript: string, timeoutMs = 120_000): Promise<void> {
+    if (this.isConnected()) return Promise.resolve();
+    if (this.ensuring) return this.ensuring;
+    this.ensuring = (async () => {
+      if (!this.server) await this.listen();
+      const port = (this.server!.address() as net.AddressInfo).port;
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lmf-helper-'));
+      const tokenFile = path.join(dir, 'token');
+      const wrapperPath = path.join(dir, 'helper.cmd');
+      await fs.writeFile(tokenFile, this.token, { mode: 0o600 });
+      const plan: HelperLaunchPlan = buildHelperLaunch(process.platform, {
+        execPath, helperScript, port, tokenFile, wrapperPath,
+      });
+      if (plan.wrapperScript) await fs.writeFile(plan.wrapperScript.path, plan.wrapperScript.content);
+      try {
+        this.child = this.spawnFn(plan.command, plan.args, { detached: false, stdio: 'ignore' });
+        await this.waitForConnection(timeoutMs);
+      } catch (err) {
+        this.child?.kill();
+        this.child = null;
+        await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+        throw err;
+      }
+    })().finally(() => { this.ensuring = undefined; });
+    return this.ensuring;
   }
 
   private waitForConnection(timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      const started = Date.now();
-      const timer = setInterval(() => {
-        if (this.isConnected()) { clearInterval(timer); resolve(); }
-        else if (this.child && this.child.exitCode != null) {
-          clearInterval(timer);
+      const done = () => { clearTimeout(timer); this.onConnect = undefined; };
+      const timer = setTimeout(() => {
+        done();
+        reject(new Error('timed out waiting for the elevated helper'));
+      }, timeoutMs);
+      this.onConnect = () => { done(); resolve(); };
+      this.child?.once('exit', () => {
+        if (!this.isConnected()) {
+          done();
           reject(new Error('administrator access was denied or the helper failed to start'));
-        } else if (Date.now() - started > timeoutMs) {
-          clearInterval(timer);
-          reject(new Error('timed out waiting for the elevated helper'));
         }
-      }, 150);
+      });
     });
   }
 

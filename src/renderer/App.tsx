@@ -612,7 +612,7 @@ export default function App(): JSX.Element {
             </p>
             <DrivePermissionNotice
               elevation={elevation}
-              onGrant={() => void grantAccess()}
+              onGrant={grantAccess}
             />
             {!isLocalImage(image) && image.channel === 'experimental' && (
               <p className="warn-box">
