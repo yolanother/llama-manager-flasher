@@ -82,9 +82,9 @@ interface FlashProgress {
 
 /** Elevation status of the main process. */
 interface ElevationStatus {
-  elevated: boolean;
   platform: string;
-  canRelaunch: boolean;
+  needsElevation: boolean;
+  helperReady: boolean;
   manualHint: string | null;
 }
 
@@ -114,7 +114,7 @@ interface LlamaFlasherBridge {
   };
   elevation: {
     status(): Promise<ElevationStatus>;
-    relaunch(): Promise<{ relaunching: boolean }>;
+    ensureHelper(): Promise<{ ready: boolean }>;
   };
   appInfo(): Promise<{ version: string; platform: string }>;
 }

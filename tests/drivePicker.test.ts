@@ -96,9 +96,9 @@ describe('DrivePermissionNotice', () => {
   it('offers an administrator relaunch before Windows raw-drive access', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
       elevation: {
-        elevated: false,
         platform: 'win32',
-        canRelaunch: true,
+        needsElevation: true,
+        helperReady: false,
         manualHint: null,
       },
       onRelaunch: vi.fn(),
@@ -111,9 +111,9 @@ describe('DrivePermissionNotice', () => {
   it('stays hidden when Windows drive access is already elevated', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
       elevation: {
-        elevated: true,
         platform: 'win32',
-        canRelaunch: false,
+        needsElevation: false,
+        helperReady: true,
         manualHint: null,
       },
       onRelaunch: vi.fn(),

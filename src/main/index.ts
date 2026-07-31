@@ -24,22 +24,20 @@ import {
   type ApplianceImage,
   type PlatformId,
 } from '../shared/manifest.js';
-import { driveRejectionReason } from '../shared/deviceSafety.js';
 import {
   dispatchWindowControl,
   type WindowControl,
 } from '../shared/windowControls.js';
 import { downloadImage, sha256File, type DownloadProgress } from './download.js';
-import {
-  normalizeDriveCandidate,
-  scanSafeDrives,
-  waitForScannerReady,
-  type DriveScanResult,
-  type ScannerLike,
-} from './driveScanner.js';
-import { getElevationStatus, relaunchElevated } from './elevation.js';
+import { type DriveScanResult } from './driveScanner.js';
+import { getElevationStatus } from './elevation.js';
+import { HelperClient } from './helperClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Absolute path to the compiled helper entry shipped alongside main. */
+const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js');
+const helper = new HelperClient();
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
 const RENDERER_URL = process.env.VITE_DEV_SERVER_URL
@@ -93,6 +91,8 @@ app.whenReady().then(() => {
   createWindow();
 });
 
+app.on('will-quit', () => helper.dispose());
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
@@ -145,26 +145,9 @@ ipcMain.handle('manifest:fetch', async (_event, args: { platformId: PlatformId }
    IPC: device enumeration
    ─────────────────────────────────────────────────────────────── */
 
-/**
- * Lazily constructs an etcher-sdk Scanner over non-system block devices.
- * Lazy so type-only checks and tests never load the native modules.
- *
- * @returns A started-ready Scanner instance.
- */
-async function loadScanner() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sdk = await import('etcher-sdk') as any;
-  const adapters = [
-    new sdk.scanner.adapters.BlockDeviceAdapter({
-      includeSystemDrives: () => false,
-    }),
-  ];
-  return new sdk.scanner.Scanner(adapters);
-}
-
 ipcMain.handle('devices:list', async (): Promise<DriveScanResult> => {
-  const scanner = await loadScanner() as ScannerLike;
-  const result = await scanSafeDrives(scanner, { elevated: getElevationStatus().elevated });
+  await helper.ensure(process.execPath, HELPER_SCRIPT);
+  const result = await helper.request({ type: 'scan' }) as DriveScanResult;
   console.info('[device-scan]', JSON.stringify(result.diagnostics));
   return result;
 });
@@ -234,80 +217,31 @@ ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: 
    ─────────────────────────────────────────────────────────────── */
 
 ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePath: string; typedConfirmation: string }) => {
-  // Destructive-confirmation rail: the renderer must pass through what the
-  // user actually typed, and it must match the target device path.
-  if (args.typedConfirmation !== args.devicePath) {
-    throw new Error('confirmation text does not match the selected device');
-  }
-
+  await helper.ensure(process.execPath, HELPER_SCRIPT);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sdk = await import('etcher-sdk') as any;
-  const { sourceDestination, multiWrite } = sdk;
-
-  const source: unknown = args.imagePath.endsWith('.xz')
-    ? new sourceDestination.XzSource(new sourceDestination.File({ path: args.imagePath }))
-    : new sourceDestination.File({ path: args.imagePath });
-
-  // Re-enumerate-and-match: etcher-sdk gets its own freshly scanned drive
-  // object, never one constructed from renderer input.
-  const scanner = await loadScanner();
-  await waitForScannerReady(scanner as ScannerLike);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const target = Array.from(scanner.drives.values() as Iterable<any>)
-    .find((d) => d.device === args.devicePath);
-  if (!target) {
-    scanner.stop();
-    throw new Error(`device ${args.devicePath} not found — was it unplugged?`);
-  }
-
-  // Safety rails re-checked in the main process at the last moment.
-  const normalizedTarget = normalizeDriveCandidate(target);
-  const rejection = normalizedTarget == null
-    ? 'missing device path — cannot safely identify the target'
-    : driveRejectionReason(normalizedTarget);
-  if (rejection) {
-    scanner.stop();
-    throw new Error(`refusing to flash ${args.devicePath}: ${rejection}`);
-  }
-
-  const writer = new sourceDestination.BlockDevice({
-    drive: target,
-    unmountOnSuccess: true,
-    write: true,
-    direct: true,
-  });
-
-  const result = await multiWrite.pipeSourceToDestinations({
-    source,
-    destinations: [writer],
-    verify: true,
-    trim: false,
-    onProgress: (p: { type: string; bytesWritten?: number; size?: number; speed?: number; percentage?: number }) => {
-      event.sender.send('flash:progress', {
-        phase: p.type,
-        bytesWritten: p.bytesWritten ?? 0,
-        size: p.size ?? 0,
-        speed: p.speed ?? 0,
-        percentage: p.percentage ?? 0,
-      });
-    },
-    onFail: (_dest: unknown, err: Error) => {
-      event.sender.send('flash:progress', { phase: 'failed', error: err.message });
-    },
-  });
-  scanner.stop();
-  return { ok: result.failures.size === 0 };
+  return helper.request(
+    { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation } as any,
+    (p) => event.sender.send('flash:progress', p),
+  );
 });
 
 /* ─────────────────────────────────────────────────────────────────
    IPC: elevation
    ─────────────────────────────────────────────────────────────── */
 
-ipcMain.handle('elevation:status', () => getElevationStatus());
+ipcMain.handle('elevation:status', () => {
+  const status = getElevationStatus();
+  return {
+    platform: status.platform,
+    needsElevation: status.platform === 'win32' || status.platform === 'linux',
+    helperReady: helper.isConnected(),
+    manualHint: status.manualHint,
+  };
+});
 
-ipcMain.handle('elevation:relaunch', () => {
-  relaunchElevated(() => app.quit());
-  return { relaunching: true };
+ipcMain.handle('elevation:ensureHelper', async () => {
+  await helper.ensure(process.execPath, HELPER_SCRIPT);
+  return { ready: helper.isConnected() };
 });
 
 /* ─────────────────────────────────────────────────────────────────

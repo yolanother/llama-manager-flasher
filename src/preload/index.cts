@@ -67,9 +67,9 @@ interface FlashProgress {
 
 /** Elevation status of the main process. */
 interface ElevationStatus {
-  elevated: boolean;
   platform: string;
-  canRelaunch: boolean;
+  needsElevation: boolean;
+  helperReady: boolean;
   manualHint: string | null;
 }
 
@@ -112,7 +112,7 @@ const api = {
   },
   elevation: {
     status: (): Promise<ElevationStatus> => ipcRenderer.invoke('elevation:status'),
-    relaunch: (): Promise<{ relaunching: boolean }> => ipcRenderer.invoke('elevation:relaunch'),
+    ensureHelper: (): Promise<{ ready: boolean }> => ipcRenderer.invoke('elevation:ensureHelper'),
   },
   appInfo: (): Promise<{ version: string; platform: string }> => ipcRenderer.invoke('app:info'),
 };

@@ -12,7 +12,7 @@
 // relaunch: etcher-sdk opens devices through Apple's authopen(1), which
 // prompts for authorization per device.
 
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 /** Elevation status reported to the renderer. */
 export interface ElevationStatus {
@@ -128,42 +128,3 @@ export function buildHelperLaunch(
   return { command: opts.execPath, args: helperArgs, elevated: false };
 }
 
-/**
- * Relaunches the app with elevated privileges and quits the current
- * (unprivileged) instance on success.
- *
- * @param quit - Callback that quits the current app instance (app.quit).
- * @throws {Error} When the platform has no automatic elevation path.
- */
-export function relaunchElevated(quit: () => void): void {
-  const target = appLaunchPath();
-  if (process.platform === 'win32') {
-    // UAC prompt via the runas verb. -WindowStyle Hidden hides the transient
-    // PowerShell host window, not the app.
-    const psArgs = [
-      '-NoProfile',
-      '-WindowStyle', 'Hidden',
-      '-Command',
-      `Start-Process -FilePath '${target.replace(/'/g, "''")}' -Verb RunAs`,
-    ];
-    spawn('powershell.exe', psArgs, { detached: true, stdio: 'ignore' }).unref();
-    setTimeout(quit, 500);
-    return;
-  }
-  if (process.platform === 'linux') {
-    // pkexec strips the environment; forward what the GUI needs and disable
-    // Chromium's sandbox (required when running as root).
-    const envArgs = ['env'];
-    for (const key of ['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR']) {
-      const value = process.env[key];
-      if (value) envArgs.push(`${key}=${value}`);
-    }
-    spawn('pkexec', [...envArgs, target, '--no-sandbox'], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
-    setTimeout(quit, 500);
-    return;
-  }
-  throw new Error(`automatic elevation is not supported on ${process.platform}`);
-}

@@ -132,7 +132,7 @@ export function DrivePermissionNotice({
   elevation,
   onRelaunch,
 }: DrivePermissionNoticeProps): JSX.Element | null {
-  if (elevation?.platform !== 'win32' || elevation.elevated) return null;
+  if (elevation?.platform !== 'win32' || !elevation.needsElevation) return null;
 
   return (
     <div className="warn-box elev drive-permission" role="status">
@@ -140,7 +140,7 @@ export function DrivePermissionNotice({
         <strong>Administrator access is required</strong>
         <p>Windows requires UAC approval before this app can write a USB stick or microSD card.</p>
       </div>
-      {elevation.canRelaunch ? (
+      {!elevation.helperReady ? (
         <button type="button" className="ghost compact" onClick={onRelaunch}>
           Relaunch as administrator
         </button>
@@ -520,7 +520,7 @@ export default function App(): JSX.Element {
     [drive, typed],
   );
 
-  const needsElevation = elevation != null && !elevation.elevated;
+  const needsElevation = elevation != null && elevation.needsElevation;
 
   return (
     <div className="shell" data-platform={platformDataValue(image, manifestLoading)}>
@@ -606,7 +606,7 @@ export default function App(): JSX.Element {
             </p>
             <DrivePermissionNotice
               elevation={elevation}
-              onRelaunch={() => void window.llamaFlasher.elevation.relaunch()}
+              onRelaunch={() => void window.llamaFlasher.elevation.ensureHelper()}
             />
             {!isLocalImage(image) && image.channel === 'experimental' && (
               <p className="warn-box">
@@ -676,11 +676,11 @@ export default function App(): JSX.Element {
                 <p>
                   Writing to a raw device needs {elevation?.platform === 'win32' ? 'administrator' : 'root'} rights.
                 </p>
-                {elevation?.canRelaunch ? (
+                {elevation != null && !elevation.helperReady ? (
                   <button
                     type="button"
                     className="ghost"
-                    onClick={() => void window.llamaFlasher.elevation.relaunch()}
+                    onClick={() => void window.llamaFlasher.elevation.ensureHelper()}
                   >
                     Relaunch elevated
                   </button>
