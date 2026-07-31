@@ -1,43 +1,45 @@
 import { describe, expect, it } from 'vitest';
 import { buildHelperLaunch } from '../src/main/elevation.js';
 
-const opts = {
-  execPath: 'C:\\app\\electron.exe',
-  helperScript: 'C:\\app\\dist\\helper\\index.js',
-  port: 51515,
-  tokenFile: 'C:\\tmp\\tok.txt',
-  wrapperPath: 'C:\\tmp\\helper.cmd',
-};
+const tokenFile = 'C:\\tmp\\tok.txt';
 
 describe('buildHelperLaunch', () => {
-  it('windows: RunAs a wrapper .cmd that sets ELECTRON_RUN_AS_NODE', () => {
-    const plan = buildHelperLaunch('win32', opts);
+  it('win32: RunAs directly via powershell, no wrapper script', () => {
+    const execPath = 'C:\\app\\app.exe';
+    const baseArgs = ['C:\\app\\app.exe', '--helper'];
+    const plan = buildHelperLaunch('win32', { execPath, baseArgs, port: 51515, tokenFile });
     expect(plan.command).toBe('powershell.exe');
     expect(plan.elevated).toBe(true);
-    expect(plan.args.join(' ')).toContain('Start-Process');
-    expect(plan.args.join(' ')).toContain('-Verb RunAs');
-    expect(plan.wrapperScript?.path).toBe('C:\\tmp\\helper.cmd');
-    expect(plan.wrapperScript?.content).toContain('set ELECTRON_RUN_AS_NODE=1');
-    expect(plan.wrapperScript?.content).toContain('51515');
-    expect(plan.wrapperScript?.content).toContain('tok.txt');
+    const argsStr = plan.args.join(' ');
+    expect(argsStr).toContain('Start-Process');
+    expect(argsStr).toContain('-Verb RunAs');
+    expect(argsStr).toContain('--helper');
+    expect(argsStr).toContain('--port');
+    expect(argsStr).toContain('51515');
+    expect(argsStr).toContain(tokenFile.replace(/'/g, "''"));
+    expect((plan as Record<string, unknown>)['wrapperScript']).toBeUndefined();
   });
 
-  it('linux: pkexec env ELECTRON_RUN_AS_NODE with the helper args', () => {
-    const plan = buildHelperLaunch('linux', { ...opts, execPath: '/opt/app/electron', helperScript: '/opt/app/dist/helper/index.js', tokenFile: '/tmp/tok.txt' });
+  it('linux: pkexec with execPath and baseArgs directly, no env wrapper', () => {
+    const execPath = '/opt/app/electron';
+    const baseArgs = ['/opt/app/electron', '--helper'];
+    const plan = buildHelperLaunch('linux', { execPath, baseArgs, port: 51515, tokenFile: '/tmp/tok.txt' });
     expect(plan.command).toBe('pkexec');
     expect(plan.elevated).toBe(true);
     expect(plan.args).toEqual([
-      'env', 'ELECTRON_RUN_AS_NODE=1',
-      '/opt/app/electron', '/opt/app/dist/helper/index.js',
-      '--port', '51515', '--token-file', '/tmp/tok.txt',
-    ].map(String));
+      execPath, ...baseArgs, '--port', '51515', '--token-file', '/tmp/tok.txt',
+    ]);
   });
 
-  it('darwin: spawn directly, unprivileged', () => {
-    const plan = buildHelperLaunch('darwin', { ...opts, execPath: '/App/electron', helperScript: '/App/dist/helper/index.js', tokenFile: '/tmp/tok.txt' });
-    expect(plan.command).toBe('/App/electron');
+  it('darwin: spawn directly, unprivileged, no ELECTRON_RUN_AS_NODE', () => {
+    const execPath = '/App/electron';
+    const baseArgs = ['/App/electron', '--helper'];
+    const plan = buildHelperLaunch('darwin', { execPath, baseArgs, port: 51515, tokenFile: '/tmp/tok.txt' });
+    expect(plan.command).toBe(execPath);
     expect(plan.elevated).toBe(false);
-    expect(plan.args).toEqual(['/App/dist/helper/index.js', '--port', '51515', '--token-file', '/tmp/tok.txt']);
-    expect(plan.wrapperScript).toBeUndefined();
+    expect(plan.args).toEqual([...baseArgs, '--port', '51515', '--token-file', '/tmp/tok.txt']);
+    expect((plan as Record<string, unknown>)['wrapperScript']).toBeUndefined();
+    const allArgs = plan.args.join(' ');
+    expect(allArgs).not.toContain('ELECTRON_RUN_AS_NODE');
   });
 });

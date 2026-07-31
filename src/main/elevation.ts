@@ -10,6 +10,10 @@
 // -Verb RunAs (UAC prompt), Linux uses pkexec (polkit prompt). macOS needs no
 // elevation: etcher-sdk opens devices through Apple's authopen(1), which
 // prompts for authorization per device.
+//
+// The helper is now spawned as a headless full-Electron process launched with a
+// --helper flag rather than ELECTRON_RUN_AS_NODE, so it can load etcher-sdk
+// from inside a packaged asar.
 
 import { spawnSync } from 'node:child_process';
 
@@ -83,46 +87,36 @@ export interface HelperLaunchPlan {
   command: string;
   args: string[];
   elevated: boolean;
-  wrapperScript?: { path: string; content: string };
 }
 
 /**
- * Builds the OS-specific command that starts the headless helper as a Node
- * process (Electron run with ELECTRON_RUN_AS_NODE), elevated on Windows/Linux.
+ * Builds the OS-specific command that starts the headless helper as a
+ * full-Electron process launched with --helper, elevated on Windows/Linux.
  *
  * @param platform - Target platform.
- * @param opts - Absolute paths, the control port, and the token-file path.
- * @returns The command/args to spawn (plus a wrapper script on Windows).
+ * @param opts - execPath, baseArgs (already include --helper), control port, and token-file path.
+ * @returns The command/args to spawn.
  */
 export function buildHelperLaunch(
   platform: NodeJS.Platform,
-  opts: { execPath: string; helperScript: string; port: number; tokenFile: string; wrapperPath: string },
+  opts: { execPath: string; baseArgs: string[]; port: number; tokenFile: string },
 ): HelperLaunchPlan {
-  const helperArgs = [opts.helperScript, '--port', String(opts.port), '--token-file', opts.tokenFile];
+  const args = [...opts.baseArgs, '--port', String(opts.port), '--token-file', opts.tokenFile];
   if (platform === 'win32') {
-    const content = [
-      '@echo off',
-      'set ELECTRON_RUN_AS_NODE=1',
-      `"${opts.execPath}" "${opts.helperScript}" --port ${opts.port} --token-file "${opts.tokenFile}"`,
-      '',
-    ].join('\r\n');
+    // UAC via Start-Process -Verb RunAs; each arg single-quoted for the ArgumentList.
+    const argList = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(', ');
     return {
       command: 'powershell.exe',
       args: [
         '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
-        `Start-Process -FilePath '${opts.wrapperPath.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden`,
+        `Start-Process -FilePath '${opts.execPath.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden -ArgumentList ${argList}`,
       ],
       elevated: true,
-      wrapperScript: { path: opts.wrapperPath, content },
     };
   }
   if (platform === 'linux') {
-    return {
-      command: 'pkexec',
-      args: ['env', 'ELECTRON_RUN_AS_NODE=1', opts.execPath, ...helperArgs],
-      elevated: true,
-    };
+    return { command: 'pkexec', args: [opts.execPath, ...args], elevated: true };
   }
   // darwin (and any other unix): no up-front elevation; authopen prompts per device.
-  return { command: opts.execPath, args: helperArgs, elevated: false };
+  return { command: opts.execPath, args, elevated: false };
 }

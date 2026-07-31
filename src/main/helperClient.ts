@@ -127,7 +127,7 @@ export class HelperClient {
   }
 
   /** Spawns the elevated helper and resolves once it authenticates. */
-  ensure(execPath: string, helperScript: string, timeoutMs = 120_000): Promise<void> {
+  ensure(execPath: string, baseArgs: string[], timeoutMs = 120_000): Promise<void> {
     if (this.isConnected()) return Promise.resolve();
     if (this.ensuring) return this.ensuring;
     this.ensuring = (async () => {
@@ -135,12 +135,10 @@ export class HelperClient {
       const port = (this.server!.address() as net.AddressInfo).port;
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lmf-helper-'));
       const tokenFile = path.join(dir, 'token');
-      const wrapperPath = path.join(dir, 'helper.cmd');
       await fs.writeFile(tokenFile, this.token, { mode: 0o600 });
       const plan: HelperLaunchPlan = buildHelperLaunch(process.platform, {
-        execPath, helperScript, port, tokenFile, wrapperPath,
+        execPath, baseArgs, port, tokenFile,
       });
-      if (plan.wrapperScript) await fs.writeFile(plan.wrapperScript.path, plan.wrapperScript.content);
       try {
         this.child = this.spawnFn(plan.command, plan.args, { detached: false, stdio: 'ignore' });
         await this.waitForConnection(timeoutMs);

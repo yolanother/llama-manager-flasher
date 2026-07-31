@@ -34,9 +34,13 @@ import { HelperClient } from './helperClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** Absolute path to the compiled helper entry shipped alongside main. */
-const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js').replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
 const helper = new HelperClient();
+
+// In dev (electron .), the first positional arg must be the app path.
+// When packaged, process.execPath IS the app binary, so no extra arg is needed.
+const helperBaseArgs = app.isPackaged ? ['--helper'] : [app.getAppPath(), '--helper'];
+
+const isHelperProcess = process.argv.includes('--helper');
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
 const RENDERER_URL = process.env.VITE_DEV_SERVER_URL
@@ -86,167 +90,177 @@ function createWindow(): void {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-});
-
-app.on('will-quit', () => helper.dispose());
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
-});
-
-/* ─────────────────────────────────────────────────────────────────
-   IPC: custom titlebar window controls
-   ─────────────────────────────────────────────────────────────── */
-
-ipcMain.handle('window:control', (event, command: WindowControl) => {
-  const target = BrowserWindow.fromWebContents(event.sender);
-  if (!target) throw new Error('window control has no owning window');
-  dispatchWindowControl(command, target);
-});
-
-/* ─────────────────────────────────────────────────────────────────
-   IPC: manifest fetch + normalization
-   ─────────────────────────────────────────────────────────────── */
-
-ipcMain.handle('manifest:fetch', async (_event, args: { platformId: PlatformId }): Promise<ApplianceImage> => {
-  if (args.platformId === 'amd') {
-    const url = `${AMD_BASE_URL}/SHA256SUMS?t=${Date.now()}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`SHA256SUMS fetch failed: HTTP ${r.status}`);
-    const image = parseAmdSha256Sums(await r.text(), AMD_BASE_URL);
-    // SHA256SUMS carries no size; resolve it via HEAD so the UI can show a
-    // download total. Non-fatal when the server refuses HEAD.
-    try {
-      const head = await fetch(image.url, { method: 'HEAD' });
-      const len = Number(head.headers.get('content-length') ?? 0);
-      if (head.ok && len > 0) return { ...image, size: len };
-    } catch {
-      /* size stays null */
-    }
-    return image;
-  }
-  if (args.platformId === 'nvidia-spark') {
-    const url = `${SPARK_BASE_URL}/release.json?t=${Date.now()}`;
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(`release.json fetch failed: HTTP ${r.status}`);
-    return parseSparkRelease(await r.json(), SPARK_BASE_URL);
-  }
-  throw new Error(`unknown platform: ${String(args.platformId)}`);
-});
-
-/* ─────────────────────────────────────────────────────────────────
-   IPC: device enumeration
-   ─────────────────────────────────────────────────────────────── */
-
-ipcMain.handle('devices:list', async (): Promise<DriveScanResult> => {
-  await helper.ensure(process.execPath, HELPER_SCRIPT);
-  const result = await helper.request({ type: 'scan' }) as DriveScanResult;
-  console.info('[device-scan]', JSON.stringify(result.diagnostics));
-  return result;
-});
-
-/* ─────────────────────────────────────────────────────────────────
-   IPC: image download (resume + retry + sha256 verify)
-   ─────────────────────────────────────────────────────────────── */
-
-ipcMain.handle('image:download', async (event, args: { url: string; file: string; sha256: string; size: number | null }): Promise<string> => {
-  return downloadImage({
-    url: args.url,
-    file: args.file,
-    sha256: args.sha256,
-    size: args.size,
-    cacheDir: CACHE_DIR,
-    onProgress: (p: DownloadProgress) => event.sender.send('image:download:progress', p),
+if (isHelperProcess) {
+  // ── Helper mode: no window, no UI IPC, just run the helper logic ──────────
+  app.whenReady().then(async () => {
+    const { runHelper } = await import('../helper/index.js');
+    runHelper(process.argv);
   });
-});
+} else {
+  // ── Normal app mode ────────────────────────────────────────────────────────
 
-/* ─────────────────────────────────────────────────────────────────
-   IPC: local image selection (choose from disk + optional verify)
-   ─────────────────────────────────────────────────────────────── */
+  app.whenReady().then(() => {
+    createWindow();
+  });
 
-// Opens the native file picker so the user can flash an image they already
-// downloaded. Only a user-selected path leaves this handler; flash:start
-// already accepts an arbitrary imagePath, so this grants no new privilege.
-ipcMain.handle('image:choose', async (): Promise<{ path: string; file: string; size: number | null } | null> => {
-  const options: Electron.OpenDialogOptions = {
-    title: 'Choose a downloaded appliance image',
-    properties: ['openFile'],
-    filters: [
-      { name: 'Disk images', extensions: ['iso', 'img', 'xz'] },
-      { name: 'All files', extensions: ['*'] },
-    ],
-  };
-  const result = mainWindow
-    ? await dialog.showOpenDialog(mainWindow, options)
-    : await dialog.showOpenDialog(options);
-  if (result.canceled || result.filePaths.length === 0) return null;
-  const chosen = result.filePaths[0];
-  let size: number | null = null;
-  try {
-    size = (await fs.stat(chosen)).size;
-  } catch {
-    /* size stays null — the file is still flashable */
-  }
-  return { path: chosen, file: path.basename(chosen), size };
-});
+  app.on('will-quit', () => helper.dispose());
 
-// Optional pre-write checksum for a user-chosen image. Reuses the download
-// module's streaming hash and reports a single verifying event so the renderer
-// can surface the "Verifying checksum" phase. Throws on mismatch so a bad file
-// never reaches the writer.
-ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: string }): Promise<string> => {
-  const expected = args.sha256.trim().toLowerCase();
-  const st = await fs.stat(args.path);
-  event.sender.send('image:download:progress', { phase: 'verifying', bytes: st.size, total: st.size });
-  const actual = (await sha256File(args.path)).toLowerCase();
-  if (actual !== expected) {
-    throw new Error(`sha256 mismatch: expected ${expected}, got ${actual}`);
-  }
-  return args.path;
-});
+  app.on('window-all-closed', () => {
+    if (process.platform !== 'darwin') app.quit();
+  });
 
-/* ─────────────────────────────────────────────────────────────────
-   IPC: flash (write + verify)
-   ─────────────────────────────────────────────────────────────── */
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 
-ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePath: string; typedConfirmation: string }) => {
-  await helper.ensure(process.execPath, HELPER_SCRIPT);
-  return helper.request(
-    { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation },
-    (p) => event.sender.send('flash:progress', p),
-  );
-});
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: custom titlebar window controls
+     ─────────────────────────────────────────────────────────────── */
 
-/* ─────────────────────────────────────────────────────────────────
-   IPC: elevation
-   ─────────────────────────────────────────────────────────────── */
+  ipcMain.handle('window:control', (event, command: WindowControl) => {
+    const target = BrowserWindow.fromWebContents(event.sender);
+    if (!target) throw new Error('window control has no owning window');
+    dispatchWindowControl(command, target);
+  });
 
-ipcMain.handle('elevation:status', () => {
-  const status = getElevationStatus();
-  return {
-    platform: status.platform,
-    needsElevation: status.platform === 'win32' || status.platform === 'linux',
-    helperReady: helper.isConnected(),
-    manualHint: status.manualHint,
-  };
-});
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: manifest fetch + normalization
+     ─────────────────────────────────────────────────────────────── */
 
-ipcMain.handle('elevation:ensureHelper', async () => {
-  await helper.ensure(process.execPath, HELPER_SCRIPT);
-  return { ready: helper.isConnected() };
-});
+  ipcMain.handle('manifest:fetch', async (_event, args: { platformId: PlatformId }): Promise<ApplianceImage> => {
+    if (args.platformId === 'amd') {
+      const url = `${AMD_BASE_URL}/SHA256SUMS?t=${Date.now()}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`SHA256SUMS fetch failed: HTTP ${r.status}`);
+      const image = parseAmdSha256Sums(await r.text(), AMD_BASE_URL);
+      // SHA256SUMS carries no size; resolve it via HEAD so the UI can show a
+      // download total. Non-fatal when the server refuses HEAD.
+      try {
+        const head = await fetch(image.url, { method: 'HEAD' });
+        const len = Number(head.headers.get('content-length') ?? 0);
+        if (head.ok && len > 0) return { ...image, size: len };
+      } catch {
+        /* size stays null */
+      }
+      return image;
+    }
+    if (args.platformId === 'nvidia-spark') {
+      const url = `${SPARK_BASE_URL}/release.json?t=${Date.now()}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`release.json fetch failed: HTTP ${r.status}`);
+      return parseSparkRelease(await r.json(), SPARK_BASE_URL);
+    }
+    throw new Error(`unknown platform: ${String(args.platformId)}`);
+  });
 
-/* ─────────────────────────────────────────────────────────────────
-   IPC: app metadata
-   ─────────────────────────────────────────────────────────────── */
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: device enumeration
+     ─────────────────────────────────────────────────────────────── */
 
-ipcMain.handle('app:info', () => ({
-  version: app.getVersion(),
-  platform: process.platform,
-}));
+  ipcMain.handle('devices:list', async (): Promise<DriveScanResult> => {
+    await helper.ensure(process.execPath, helperBaseArgs);
+    const result = await helper.request({ type: 'scan' }) as DriveScanResult;
+    console.info('[device-scan]', JSON.stringify(result.diagnostics));
+    return result;
+  });
+
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: image download (resume + retry + sha256 verify)
+     ─────────────────────────────────────────────────────────────── */
+
+  ipcMain.handle('image:download', async (event, args: { url: string; file: string; sha256: string; size: number | null }): Promise<string> => {
+    return downloadImage({
+      url: args.url,
+      file: args.file,
+      sha256: args.sha256,
+      size: args.size,
+      cacheDir: CACHE_DIR,
+      onProgress: (p: DownloadProgress) => event.sender.send('image:download:progress', p),
+    });
+  });
+
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: local image selection (choose from disk + optional verify)
+     ─────────────────────────────────────────────────────────────── */
+
+  // Opens the native file picker so the user can flash an image they already
+  // downloaded. Only a user-selected path leaves this handler; flash:start
+  // already accepts an arbitrary imagePath, so this grants no new privilege.
+  ipcMain.handle('image:choose', async (): Promise<{ path: string; file: string; size: number | null } | null> => {
+    const options: Electron.OpenDialogOptions = {
+      title: 'Choose a downloaded appliance image',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Disk images', extensions: ['iso', 'img', 'xz'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    if (result.canceled || result.filePaths.length === 0) return null;
+    const chosen = result.filePaths[0];
+    let size: number | null = null;
+    try {
+      size = (await fs.stat(chosen)).size;
+    } catch {
+      /* size stays null — the file is still flashable */
+    }
+    return { path: chosen, file: path.basename(chosen), size };
+  });
+
+  // Optional pre-write checksum for a user-chosen image. Reuses the download
+  // module's streaming hash and reports a single verifying event so the renderer
+  // can surface the "Verifying checksum" phase. Throws on mismatch so a bad file
+  // never reaches the writer.
+  ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: string }): Promise<string> => {
+    const expected = args.sha256.trim().toLowerCase();
+    const st = await fs.stat(args.path);
+    event.sender.send('image:download:progress', { phase: 'verifying', bytes: st.size, total: st.size });
+    const actual = (await sha256File(args.path)).toLowerCase();
+    if (actual !== expected) {
+      throw new Error(`sha256 mismatch: expected ${expected}, got ${actual}`);
+    }
+    return args.path;
+  });
+
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: flash (write + verify)
+     ─────────────────────────────────────────────────────────────── */
+
+  ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePath: string; typedConfirmation: string }) => {
+    await helper.ensure(process.execPath, helperBaseArgs);
+    return helper.request(
+      { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation },
+      (p) => event.sender.send('flash:progress', p),
+    );
+  });
+
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: elevation
+     ─────────────────────────────────────────────────────────────── */
+
+  ipcMain.handle('elevation:status', () => {
+    const status = getElevationStatus();
+    return {
+      platform: status.platform,
+      needsElevation: status.platform === 'win32' || status.platform === 'linux',
+      helperReady: helper.isConnected(),
+      manualHint: status.manualHint,
+    };
+  });
+
+  ipcMain.handle('elevation:ensureHelper', async () => {
+    await helper.ensure(process.execPath, helperBaseArgs);
+    return { ready: helper.isConnected() };
+  });
+
+  /* ─────────────────────────────────────────────────────────────────
+     IPC: app metadata
+     ─────────────────────────────────────────────────────────────── */
+
+  ipcMain.handle('app:info', () => ({
+    version: app.getVersion(),
+    platform: process.platform,
+  }));
+}
