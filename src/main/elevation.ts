@@ -79,6 +79,55 @@ function appLaunchPath(): string {
   );
 }
 
+/** A resolved plan for launching the helper, elevated where the OS requires it. */
+export interface HelperLaunchPlan {
+  command: string;
+  args: string[];
+  elevated: boolean;
+  wrapperScript?: { path: string; content: string };
+}
+
+/**
+ * Builds the OS-specific command that starts the headless helper as a Node
+ * process (Electron run with ELECTRON_RUN_AS_NODE), elevated on Windows/Linux.
+ *
+ * @param platform - Target platform.
+ * @param opts - Absolute paths, the control port, and the token-file path.
+ * @returns The command/args to spawn (plus a wrapper script on Windows).
+ */
+export function buildHelperLaunch(
+  platform: NodeJS.Platform,
+  opts: { execPath: string; helperScript: string; port: number; tokenFile: string; wrapperPath: string },
+): HelperLaunchPlan {
+  const helperArgs = [opts.helperScript, '--port', String(opts.port), '--token-file', opts.tokenFile];
+  if (platform === 'win32') {
+    const content = [
+      '@echo off',
+      'set ELECTRON_RUN_AS_NODE=1',
+      `"${opts.execPath}" "${opts.helperScript}" --port ${opts.port} --token-file "${opts.tokenFile}"`,
+      '',
+    ].join('\r\n');
+    return {
+      command: 'powershell.exe',
+      args: [
+        '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
+        `Start-Process -FilePath '${opts.wrapperPath.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden`,
+      ],
+      elevated: true,
+      wrapperScript: { path: opts.wrapperPath, content },
+    };
+  }
+  if (platform === 'linux') {
+    return {
+      command: 'pkexec',
+      args: ['env', 'ELECTRON_RUN_AS_NODE=1', opts.execPath, ...helperArgs],
+      elevated: true,
+    };
+  }
+  // darwin (and any other unix): no up-front elevation; authopen prompts per device.
+  return { command: opts.execPath, args: helperArgs, elevated: false };
+}
+
 /**
  * Relaunches the app with elevated privileges and quits the current
  * (unprivileged) instance on success.
