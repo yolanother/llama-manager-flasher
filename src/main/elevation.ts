@@ -109,7 +109,11 @@ export function buildHelperLaunch(
       command: 'powershell.exe',
       args: [
         '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
-        `Start-Process -FilePath '${opts.execPath.replace(/'/g, "''")}' -Verb RunAs -WindowStyle Hidden -ArgumentList ${argList}`,
+        // -Wait keeps powershell alive for the elevated helper's whole lifetime,
+        // so its exit is a faithful failure signal (UAC denied → RunAs throws →
+        // non-zero exit) instead of firing the instant RunAs hands off — which
+        // otherwise rejects the connection before the helper can boot + connect.
+        `Start-Process -FilePath '${opts.execPath.replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList ${argList}`,
       ],
       elevated: true,
     };

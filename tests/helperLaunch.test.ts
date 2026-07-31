@@ -1,3 +1,12 @@
+// Llama Manager Flasher — per-OS elevated-helper launch command tests.
+//
+// Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
+// governed by the LICENSE file in the repository root.
+//
+// Locks the command buildHelperLaunch produces to spawn the headless helper:
+// Windows RunAs (with -Wait so the launcher can detect denial), Linux pkexec,
+// macOS direct/unprivileged.
+
 import { describe, expect, it } from 'vitest';
 import { buildHelperLaunch } from '../src/main/elevation.js';
 
@@ -13,6 +22,7 @@ describe('buildHelperLaunch', () => {
     const argsStr = plan.args.join(' ');
     expect(argsStr).toContain('Start-Process');
     expect(argsStr).toContain('-Verb RunAs');
+    expect(argsStr).toContain('-Wait');
     expect(argsStr).toContain('--helper');
     expect(argsStr).toContain('--port');
     expect(argsStr).toContain('51515');
