@@ -21,6 +21,10 @@ const pkgPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'p
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
 describe('artifact name mapping', () => {
+  it('ships the Windows helper hotfix as v0.1.8', () => {
+    expect(pkg.version).toBe('0.1.8');
+  });
+
   it('produces the exact versionless names the site links', () => {
     expect(artifactNameFor('windows')).toBe('LlamaManagerFlasher-win-x64-portable.exe');
     expect(artifactNameFor('mac')).toBe('LlamaManagerFlasher-mac-arm64.dmg');

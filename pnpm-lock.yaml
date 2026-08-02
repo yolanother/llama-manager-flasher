@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   '@ronomon/direct-io@3.0.1':
-    hash: 39b3f57edc3d0d9b5483958b1fb433277b3888c5f4a7982d87cb887ec3586b6a
+    hash: 04cc76dbf105fb2e8039bef98f2ab50a162d805e9b8a6bf6cdc8cd2c8cb7f648
     path: patches/ronomon-direct-io-v8-cage.patch
 
 importers:
@@ -3053,7 +3053,7 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.62.3':
     optional: true
 
-  '@ronomon/direct-io@3.0.1(patch_hash=39b3f57edc3d0d9b5483958b1fb433277b3888c5f4a7982d87cb887ec3586b6a)':
+  '@ronomon/direct-io@3.0.1(patch_hash=04cc76dbf105fb2e8039bef98f2ab50a162d805e9b8a6bf6cdc8cd2c8cb7f648)':
     dependencies:
       '@ronomon/queue': 3.0.1
 
@@ -3798,7 +3798,7 @@ snapshots:
     dependencies:
       '@balena/node-beaglebone-usbboot': 3.0.7
       '@balena/udif': 1.1.2
-      '@ronomon/direct-io': 3.0.1(patch_hash=39b3f57edc3d0d9b5483958b1fb433277b3888c5f4a7982d87cb887ec3586b6a)
+      '@ronomon/direct-io': 3.0.1(patch_hash=04cc76dbf105fb2e8039bef98f2ab50a162d805e9b8a6bf6cdc8cd2c8cb7f648)
       aws4-axios: 3.4.0(axios@1.18.1(debug@4.4.3))
       axios: 1.18.1(debug@4.4.3)
       axios-http2-adapter: 1.0.3(axios@1.18.1(debug@4.4.3))(debug@4.4.3)

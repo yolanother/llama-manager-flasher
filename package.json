@@ -1,6 +1,6 @@
 {
   "name": "llama-manager-flasher",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Llama Manager Flasher \u2014 branded, standalone appliance-image flasher. Downloads the latest Llama Manager appliance ISO (AMD Ryzen stable / NVIDIA DGX Spark experimental), sha256-verifies it, and writes it to USB / microSD with post-write verification.",
   "author": "Doubling Technologies (DoubTech.ai)",
