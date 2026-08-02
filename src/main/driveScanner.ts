@@ -133,8 +133,60 @@ function diagnostic(drive: DriveInfo, reason: string): DriveRejectionDiagnostic 
 }
 
 /**
+ * Normalizes, safety-filters, and diagnoses a set of raw scanner candidates.
+ * Pure: does not start or stop the scanner, so a long-lived scanner can be
+ * read repeatedly without the churn of per-scan start/stop cycles.
+ *
+ * @param candidates - The scanner's current drive objects.
+ * @param options - Elevation flag and the measured readiness time.
+ * @returns Accepted removable drives plus sanitized diagnostics.
+ */
+export function buildScanResult(
+  candidates: unknown[],
+  options: { elevated?: boolean; readyMs: number },
+): DriveScanResult {
+  const normalized = candidates.map(normalizeDriveCandidate);
+  const drives: DriveInfo[] = [];
+  const rejections: DriveRejectionDiagnostic[] = [];
+
+  normalized.forEach((drive, index) => {
+    if (drive == null) {
+      const raw = backingDrive(candidates[index]);
+      rejections.push({
+        device: '(missing)',
+        description: raw.description ?? raw.devicePath ?? 'Unnamed block device',
+        size: raw.size ?? null,
+        isSystem: !!raw.isSystem,
+        isUSB: !!raw.isUSB,
+        isCard: !!raw.isCard,
+        isRemovable: !!raw.isRemovable,
+        reason: 'missing device path — cannot safely identify the target',
+      });
+      return;
+    }
+    const reason = driveRejectionReason(drive);
+    if (reason) rejections.push(diagnostic(drive, reason));
+    else drives.push(drive);
+  });
+
+  return {
+    drives,
+    diagnostics: {
+      rawCandidateCount: candidates.length,
+      normalizedCandidateCount: normalized.filter((drive) => drive !== null).length,
+      acceptedCandidateCount: drives.length,
+      elevated: !!options.elevated,
+      readyMs: options.readyMs,
+      rejections,
+    },
+  };
+}
+
+/**
  * Enumerates safe removable block devices. Scanner.start() resolves after the
- * adapter's first drivelist scan, so no post-ready sleep is necessary.
+ * adapter's first drivelist scan, so no post-ready sleep is necessary. Starts
+ * and stops the scanner around a single enumeration; for repeated scans prefer
+ * a long-lived scanner with {@link buildScanResult}.
  */
 export async function scanSafeDrives(
   scanner: ScannerLike,
@@ -142,42 +194,10 @@ export async function scanSafeDrives(
 ): Promise<DriveScanResult> {
   try {
     const readyMs = await waitForScannerReady(scanner, options.readyTimeoutMs);
-    const candidates = Array.from(scanner.drives.values());
-    const normalized = candidates.map(normalizeDriveCandidate);
-    const drives: DriveInfo[] = [];
-    const rejections: DriveRejectionDiagnostic[] = [];
-
-    normalized.forEach((drive, index) => {
-      if (drive == null) {
-        const raw = backingDrive(candidates[index]);
-        rejections.push({
-          device: '(missing)',
-          description: raw.description ?? raw.devicePath ?? 'Unnamed block device',
-          size: raw.size ?? null,
-          isSystem: !!raw.isSystem,
-          isUSB: !!raw.isUSB,
-          isCard: !!raw.isCard,
-          isRemovable: !!raw.isRemovable,
-          reason: 'missing device path — cannot safely identify the target',
-        });
-        return;
-      }
-      const reason = driveRejectionReason(drive);
-      if (reason) rejections.push(diagnostic(drive, reason));
-      else drives.push(drive);
+    return buildScanResult(Array.from(scanner.drives.values()), {
+      elevated: options.elevated,
+      readyMs,
     });
-
-    return {
-      drives,
-      diagnostics: {
-        rawCandidateCount: candidates.length,
-        normalizedCandidateCount: normalized.filter((drive) => drive !== null).length,
-        acceptedCandidateCount: drives.length,
-        elevated: !!options.elevated,
-        readyMs,
-        rejections,
-      },
-    };
   } finally {
     scanner.stop();
   }

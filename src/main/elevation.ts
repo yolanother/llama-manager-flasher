@@ -11,9 +11,9 @@
 // elevation: etcher-sdk opens devices through Apple's authopen(1), which
 // prompts for authorization per device.
 //
-// The helper is now spawned as a headless full-Electron process launched with a
-// --helper flag rather than ELECTRON_RUN_AS_NODE, so it can load etcher-sdk
-// from inside a packaged asar.
+// The helper is spawned as a standalone SYSTEM-NODE process (not Electron):
+// Electron's bundled Node cannot open raw physical-drive paths on Windows (EIO),
+// while system Node opens them fine.
 
 import { spawnSync } from 'node:child_process';
 
@@ -90,8 +90,8 @@ export interface HelperLaunchPlan {
 }
 
 /**
- * Builds the OS-specific command that starts the headless helper as a
- * full-Electron process launched with --helper, elevated on Windows/Linux.
+ * Builds the OS-specific command that starts the helper as a standalone
+ * system-Node process, elevated on Windows/Linux.
  *
  * @param platform - Target platform.
  * @param opts - execPath, baseArgs (already include --helper), control port, and token-file path.
@@ -99,12 +99,15 @@ export interface HelperLaunchPlan {
  */
 export function buildHelperLaunch(
   platform: NodeJS.Platform,
-  opts: { execPath: string; baseArgs: string[]; port: number; tokenFile: string },
+  opts: { execPath: string; baseArgs: string[]; port: number; tokenFile: string; cwd?: string },
 ): HelperLaunchPlan {
   const args = [...opts.baseArgs, '--port', String(opts.port), '--token-file', opts.tokenFile];
   if (platform === 'win32') {
     // UAC via Start-Process -Verb RunAs; each arg single-quoted for the ArgumentList.
     const argList = args.map((a) => `'${a.replace(/'/g, "''")}'`).join(', ');
+    // -WorkingDirectory anchors the elevated helper at the app root so it
+    // resolves node_modules (RunAs otherwise starts it in System32).
+    const workDir = opts.cwd ? ` -WorkingDirectory '${opts.cwd.replace(/'/g, "''")}'` : '';
     return {
       command: 'powershell.exe',
       args: [
@@ -113,7 +116,7 @@ export function buildHelperLaunch(
         // so its exit is a faithful failure signal (UAC denied → RunAs throws →
         // non-zero exit) instead of firing the instant RunAs hands off — which
         // otherwise rejects the connection before the helper can boot + connect.
-        `Start-Process -FilePath '${opts.execPath.replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList ${argList}`,
+        `Start-Process -FilePath '${opts.execPath.replace(/'/g, "''")}' -Verb RunAs -Wait -WindowStyle Hidden${workDir} -ArgumentList ${argList}`,
       ],
       elevated: true,
     };

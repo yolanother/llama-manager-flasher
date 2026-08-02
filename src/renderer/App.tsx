@@ -118,27 +118,26 @@ export function DriveScanNotice({ scanning, error, diagnostics, onRescan }: Driv
 interface DrivePermissionNoticeProps {
   /** Current main-process elevation status, or null while it is loading. */
   elevation: ElevationStatus | null;
-  /** Requests the elevated helper to be spawned in-place. */
-  onGrant: () => void;
 }
 
 /**
- * Prompts users to grant administrator access before choosing a flash target.
- * Hidden on platforms that do not require up-front elevation and once the
- * elevated helper is connected.
+ * Passive notice shown while the elevated helper is being requested. Elevation
+ * is requested automatically on reaching the drive step (the OS prompt appears
+ * on its own), so this only explains that prompt rather than offering a button.
+ * Hidden on platforms that need no up-front elevation and once the helper is
+ * connected.
  *
- * @param props - Current privilege status and the grant-access callback.
- * @returns An actionable notice, or null when elevation is not needed.
+ * @param props - Current privilege/helper status.
+ * @returns The passive notice, or null when elevation is not needed/ready.
  */
-export function DrivePermissionNotice({ elevation, onGrant }: DrivePermissionNoticeProps): JSX.Element | null {
+export function DrivePermissionNotice({ elevation }: DrivePermissionNoticeProps): JSX.Element | null {
   if (!elevation || !elevation.needsElevation || elevation.helperReady) return null;
   return (
-    <div className="warn-box elev drive-permission" role="status">
+    <div className="warn-box elev drive-permission" role="status" aria-live="polite">
       <div>
-        <strong>Administrator access is required</strong>
-        <p>The flasher runs device writes in a separate elevated helper. Grant access to scan and flash — this window stays open.</p>
+        <strong>Requesting administrator access…</strong>
+        <p>Approve the Windows prompt so the flasher can scan and write your drive. This window stays open.</p>
       </div>
-      <button type="button" className="ghost compact" onClick={onGrant}>Grant administrator access</button>
       {elevation.manualHint && <p className="hint">{elevation.manualHint}</p>}
     </div>
   );
@@ -340,12 +339,16 @@ export default function App(): JSX.Element {
       setDrives(result.drives);
       setDriveScanDiagnostics(result.diagnostics);
       setDrive((selected) => reconcileSelectedDrive(selected, result.drives));
-      void window.llamaFlasher.elevation.status().then(setElevation);
     } catch (scanError) {
       if (sequence !== scanSequence.current) return;
       setDriveScanError(scanError instanceof Error ? scanError.message : String(scanError));
     } finally {
-      if (sequence === scanSequence.current) setScanningDrives(false);
+      if (sequence === scanSequence.current) {
+        setScanningDrives(false);
+        // Refresh elevation/helper readiness regardless of scan outcome so the
+        // "administrator access required" notice clears once the helper connects.
+        void window.llamaFlasher.elevation.status().then(setElevation);
+      }
     }
   }, []);
 
@@ -509,18 +512,6 @@ export default function App(): JSX.Element {
     void window.llamaFlasher.elevation.status().then(setElevation);
   }, []);
 
-  const grantAccess = useCallback(async () => {
-    try {
-      await window.llamaFlasher.elevation.ensureHelper();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      setStep('error');
-      return;
-    }
-    void window.llamaFlasher.elevation.status().then(setElevation);
-    void refreshDrives();
-  }, [refreshDrives]);
-
   const helperReady = elevation?.helperReady ?? false;
 
   const confirmReady = useMemo(
@@ -610,10 +601,7 @@ export default function App(): JSX.Element {
                 <span className="chip chip-exp inline">Experimental</span>
               )}
             </p>
-            <DrivePermissionNotice
-              elevation={elevation}
-              onGrant={grantAccess}
-            />
+            <DrivePermissionNotice elevation={elevation} />
             {!isLocalImage(image) && image.channel === 'experimental' && (
               <p className="warn-box">
                 This build is unvalidated on hardware. Use it only if you know what you are doing.

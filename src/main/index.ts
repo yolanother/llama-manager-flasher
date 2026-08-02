@@ -16,6 +16,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 import {
   parseAmdSha256Sums,
@@ -34,7 +35,29 @@ import { HelperClient } from './helperClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const isHelperProcess = process.argv.includes('--helper');
+/** Absolute path to the compiled Node helper entry. */
+const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js');
+/** Directory the elevated helper runs from (so it resolves node_modules). */
+const HELPER_CWD = path.resolve(__dirname, '../..');
+
+/**
+ * Resolves the system Node executable that runs the elevated helper. Electron's
+ * bundled Node cannot open raw physical-drive paths on Windows (EIO), so the
+ * privileged device work runs under system Node. Override with LMF_HELPER_NODE.
+ *
+ * @returns An absolute path to node (or a bare 'node' as a last resort).
+ */
+function resolveHelperNode(): string {
+  if (process.env.LMF_HELPER_NODE) return process.env.LMF_HELPER_NODE;
+  try {
+    const cmd = process.platform === 'win32' ? 'where node' : 'command -v node';
+    const found = execSync(cmd, { encoding: 'utf8' }).split(/\r?\n/).map((l) => l.trim()).find(Boolean);
+    if (found) return found;
+  } catch {
+    /* fall through to bare name */
+  }
+  return process.platform === 'win32' ? 'node.exe' : 'node';
+}
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
 const RENDERER_URL = process.env.VITE_DEV_SERVER_URL
@@ -84,20 +107,10 @@ function createWindow(): void {
   });
 }
 
-if (isHelperProcess) {
-  // ── Helper mode: no window, no UI IPC, just run the helper logic ──────────
-  app.whenReady().then(async () => {
-    const { runHelper } = await import('../helper/index.js');
-    runHelper(process.argv);
-  });
-} else {
-  // ── Normal app mode ────────────────────────────────────────────────────────
+// ── Launcher (always unprivileged; delegates all device work to the helper) ──
 
-  const helper = new HelperClient();
-
-  // In dev (electron .), the first positional arg must be the app path.
-  // When packaged, process.execPath IS the app binary, so no extra arg is needed.
-  const helperBaseArgs = app.isPackaged ? ['--helper'] : [app.getAppPath(), '--helper'];
+const helper = new HelperClient();
+const helperNode = resolveHelperNode();
 
   app.whenReady().then(() => {
     createWindow();
@@ -158,7 +171,7 @@ if (isHelperProcess) {
      ─────────────────────────────────────────────────────────────── */
 
   ipcMain.handle('devices:list', async (): Promise<DriveScanResult> => {
-    await helper.ensure(process.execPath, helperBaseArgs);
+    await helper.ensure(helperNode, [HELPER_SCRIPT], HELPER_CWD);
     const result = await helper.request({ type: 'scan' }) as DriveScanResult;
     console.info('[device-scan]', JSON.stringify(result.diagnostics));
     return result;
@@ -229,7 +242,7 @@ if (isHelperProcess) {
      ─────────────────────────────────────────────────────────────── */
 
   ipcMain.handle('flash:start', async (event, args: { devicePath: string; imagePath: string; typedConfirmation: string }) => {
-    await helper.ensure(process.execPath, helperBaseArgs);
+    await helper.ensure(helperNode, [HELPER_SCRIPT], HELPER_CWD);
     return helper.request(
       { type: 'flash', devicePath: args.devicePath, imagePath: args.imagePath, typedConfirmation: args.typedConfirmation },
       (p) => event.sender.send('flash:progress', p),
@@ -251,7 +264,7 @@ if (isHelperProcess) {
   });
 
   ipcMain.handle('elevation:ensureHelper', async () => {
-    await helper.ensure(process.execPath, helperBaseArgs);
+    await helper.ensure(helperNode, [HELPER_SCRIPT], HELPER_CWD);
     return { ready: helper.isConnected() };
   });
 
@@ -263,4 +276,3 @@ if (isHelperProcess) {
     version: app.getVersion(),
     platform: process.platform,
   }));
-}

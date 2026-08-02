@@ -93,19 +93,17 @@ describe('DriveScanNotice', () => {
 });
 
 describe('DrivePermissionNotice', () => {
-  it('offers to grant administrator access when the helper is not ready', () => {
+  it('passively announces the auto-requested elevation (no button) while the helper is not ready', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
       elevation: { platform: 'win32', needsElevation: true, helperReady: false, manualHint: null },
-      onGrant: vi.fn(),
     }));
-    expect(html).toContain('Administrator access is required');
-    expect(html).toContain('Grant administrator access');
+    expect(html).toContain('Requesting administrator access');
+    expect(html).not.toContain('<button');
   });
 
   it('stays hidden once the helper is connected', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
       elevation: { platform: 'win32', needsElevation: true, helperReady: true, manualHint: null },
-      onGrant: vi.fn(),
     }));
     expect(html).toBe('');
   });
@@ -113,7 +111,6 @@ describe('DrivePermissionNotice', () => {
   it('stays hidden on macOS where no up-front elevation is needed', () => {
     const html = renderToStaticMarkup(createElement(DrivePermissionNotice, {
       elevation: { platform: 'darwin', needsElevation: false, helperReady: false, manualHint: null },
-      onGrant: vi.fn(),
     }));
     expect(html).toBe('');
   });

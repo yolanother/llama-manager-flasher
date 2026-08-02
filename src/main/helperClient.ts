@@ -127,7 +127,7 @@ export class HelperClient {
   }
 
   /** Spawns the elevated helper and resolves once it authenticates. */
-  ensure(execPath: string, baseArgs: string[], timeoutMs = 120_000): Promise<void> {
+  ensure(execPath: string, baseArgs: string[], cwd?: string, timeoutMs = 120_000): Promise<void> {
     if (this.isConnected()) return Promise.resolve();
     if (this.ensuring) return this.ensuring;
     this.ensuring = (async () => {
@@ -137,10 +137,10 @@ export class HelperClient {
       const tokenFile = path.join(dir, 'token');
       await fs.writeFile(tokenFile, this.token, { mode: 0o600 });
       const plan: HelperLaunchPlan = buildHelperLaunch(process.platform, {
-        execPath, baseArgs, port, tokenFile,
+        execPath, baseArgs, port, tokenFile, cwd,
       });
       try {
-        this.child = this.spawnFn(plan.command, plan.args, { detached: false, stdio: 'ignore' });
+        this.child = this.spawnFn(plan.command, plan.args, { detached: false, stdio: 'ignore', cwd });
         await this.waitForConnection(timeoutMs);
       } catch (err) {
         this.child?.kill();

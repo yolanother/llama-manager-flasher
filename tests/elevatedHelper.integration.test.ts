@@ -35,4 +35,14 @@ describe('elevated helper integration', () => {
     expect(source('src/main/index.ts')).not.toContain('elevation:relaunch');
     expect(source('src/main/elevation.ts')).not.toContain('relaunchElevated');
   });
+
+  it('runs the worker under system Node, not Electron (Electron cannot open raw disks on Windows)', () => {
+    const main = source('src/main/index.ts');
+    // Resolves a system node binary and spawns the compiled helper script with it.
+    expect(main).toContain('resolveHelperNode');
+    expect(main).toContain('HELPER_SCRIPT');
+    // The old ELECTRON_RUN_AS_NODE / --helper Electron-subprocess path is gone.
+    expect(main).not.toContain('ELECTRON_RUN_AS_NODE');
+    expect(source('src/main/elevation.ts')).not.toContain('ELECTRON_RUN_AS_NODE');
+  });
 });

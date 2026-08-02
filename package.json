@@ -8,6 +8,22 @@
   "type": "module",
   "main": "dist/main/index.js",
   "packageManager": "pnpm@10.32.1",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@ronomon/direct-io",
+      "drivelist",
+      "electron",
+      "esbuild",
+      "lzma-native",
+      "mountutils",
+      "usb",
+      "winusb-driver-generator",
+      "xxhash-addon"
+    ],
+    "patchedDependencies": {
+      "@ronomon/direct-io@3.0.1": "patches/ronomon-direct-io-v8-cage.patch"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "build:renderer": "vite build",
@@ -24,7 +40,7 @@
     "package:linux": "pnpm build && electron-builder --linux"
   },
   "dependencies": {
-    "etcher-sdk": "^9.0.13"
+    "etcher-sdk": "10.0.0"
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
@@ -33,7 +49,7 @@
     "@types/react": "^18.3.5",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^33.0.2",
+    "electron": "37.2.4",
     "electron-builder": "^26.15.7",
     "png2icons": "^2.0.1",
     "react": "^18.3.1",

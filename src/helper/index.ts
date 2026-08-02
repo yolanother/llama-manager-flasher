@@ -3,7 +3,9 @@
 // Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
 // governed by the LICENSE file in the repository root.
 //
-// Runs headless as a full-Electron process (launched with --helper flag).
+// Runs as a standalone SYSTEM-NODE process (spawned elevated with --port /
+// --token-file). Electron's bundled Node cannot open raw physical-drive paths
+// on Windows (EIO), so the privileged device work runs under system Node.
 // Connects back to the launcher's loopback control server, proves it holds the
 // shared token, then services scan/flash/ping commands from the device agent.
 
@@ -64,3 +66,5 @@ export function runHelper(argv: string[]): void {
   socket.on('close', () => process.exit(0));
   socket.on('error', () => process.exit(1));
 }
+
+runHelper(process.argv);
