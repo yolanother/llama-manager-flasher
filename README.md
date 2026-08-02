@@ -101,7 +101,7 @@ pnpm start                 # run the built app
 pnpm package:linux         # dist-installer/LlamaManagerFlasher-linux-x86_64.AppImage
 pnpm package:win           # (on Windows) ...-win-x64-portable.exe
 pnpm package:mac           # (on macOS)   ...-mac-arm64.dmg
-pnpm gen-icons             # regenerate build/icon.{png,ico,icns} from icon.svg
+pnpm gen-icons             # regenerate build/icon.{png,ico,icns} from icon-source.png
 ```
 
 ### The `@ronomon/direct-io` patch

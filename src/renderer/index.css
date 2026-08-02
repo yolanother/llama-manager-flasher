@@ -4,26 +4,49 @@
   Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
   governed by the LICENSE file in the repository root.
 
-  Dark frosted-glass aesthetic matching the Llama Manager product family:
-  near-black base, glass panels with backdrop blur and a top-edge highlight,
-  AMD ember (#ed1c24 → #ffa02f) and NVIDIA green (#76b900) platform accents.
-  Fonts are the local Space Grotesk / Inter when installed, falling back to
-  the system UI stack — no CDN requests, the app must work offline.
+  The flasher's complete visual theme, matching the Llama Manager marketing site
+  and the appliance ISO so all three read as one product: near-black structural
+  palette, frosted-glass surfaces, and a motion-forward accent treatment. Every
+  accent is a CSS custom property (--accent / --accent-bright / --accent-deep)
+  rather than a literal, defaulting to the hardware-neutral `generic` cyan ramp
+  and re-scoped to the AMD ember or NVIDIA green ramp whenever the shell carries
+  a data-platform value (or a platform card is previewed). Fonts are the local
+  Space Grotesk / Inter when installed, falling back to the system UI stack — no
+  CDN requests, the app must work offline.
 */
 
 :root {
-  --bg: #070708;
-  --panel: rgba(255, 255, 255, 0.045);
-  --panel-border: rgba(255, 255, 255, 0.09);
-  --panel-highlight: rgba(255, 255, 255, 0.14);
-  --text: #f2f0ec;
-  --muted: #9a968f;
-  --amber: #ffa02f;
-  --amd: #ed1c24;
-  --nvidia: #76b900;
-  --danger: #ff4d4f;
+  /* Structural tokens — shared by every platform theme. */
+  --bg: #0a0a0a;
+  --surface: #141414;
+  --surface-raised: #1a1a1a;
+  --text: #ffffff;
+  --muted: #a3a3a3;
+  --border: #2a2a2a;
+
+  /* Accent ramp — the `generic` cyan identity is the product's neutral default. */
+  --accent: #00d3db;
+  --accent-bright: #5fe9f0;
+  --accent-deep: #067f86;
+
+  /* Status colors, semantic rather than brand: signed/verified and destructive. */
   --ok: #22c55e;
+  --danger: #ff4d4f;
+
+  /* Frosted-glass recipe, shared by every raised surface. */
+  --glass-fill: rgba(20, 20, 20, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.11);
+  --glass-highlight: rgba(255, 255, 255, 0.16);
+  --glass-shadow: 0 28px 70px rgba(0, 0, 0, 0.62);
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --font: "Space Grotesk", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", monospace;
+
+  /* Backdrop colorization. The scene image is desaturated and re-tinted from the
+     active accent, so switching platforms recolors it without swapping assets. */
+  --platform-tint: rgba(0, 211, 219, 0.7);
+  --platform-tint-opacity: 0.7;
 }
 
 * { box-sizing: border-box; }
@@ -55,9 +78,11 @@ body::after {
 }
 body::before {
   background:
-    linear-gradient(180deg, rgba(7, 7, 8, 0.64), rgba(7, 7, 8, 0.42) 45%, rgba(7, 7, 8, 0.62)),
+    radial-gradient(130% 90% at 50% 0%, rgba(10, 10, 10, 0), rgba(10, 10, 10, 0.7) 78%),
+    linear-gradient(180deg, rgba(10, 10, 10, 0.42), rgba(10, 10, 10, 0.2) 42%, rgba(10, 10, 10, 0.6)),
     url(./app-bg.webp) center / cover no-repeat;
   filter: grayscale(1) saturate(0) contrast(1.06);
+  animation: scene-drift 48s var(--ease) infinite alternate;
 }
 body::after {
   background: var(--platform-tint, transparent);
@@ -65,36 +90,76 @@ body::after {
   opacity: var(--platform-tint-opacity, 0);
   transition: opacity 0.24s ease, background-color 0.24s ease;
 }
+
+@keyframes scene-drift {
+  from { transform: scale(1.04) translate3d(-0.6%, -0.4%, 0); }
+  to { transform: scale(1.1) translate3d(0.8%, 0.6%, 0); }
+}
+@keyframes aurora-drift {
+  from { transform: translate3d(-5%, -2%, 0) scale(1); opacity: 0.24; }
+  to { transform: translate3d(5%, 3%, 0) scale(1.16); opacity: 0.38; }
+}
+
 body:has(.card-amd:hover),
 body:has(.card-amd:focus-visible),
 body:has(.card-amd:focus-within) {
   --platform-tint: rgba(237, 28, 36, 0.78);
   --platform-tint-opacity: 0.78;
+  --accent: #ed1c24;
+  --accent-bright: #ff6a00;
+  --accent-deep: #a31217;
 }
 body:has(.card-nvidia:hover),
 body:has(.card-nvidia:focus-visible),
 body:has(.card-nvidia:focus-within) {
   --platform-tint: rgba(118, 185, 0, 0.78);
   --platform-tint-opacity: 0.78;
+  --accent: #76b900;
+  --accent-bright: #8fd400;
+  --accent-deep: #5a8c00;
 }
 
 
 body:has(.shell[data-platform="amd"]) {
   --platform-tint: rgba(237, 28, 36, 0.78);
   --platform-tint-opacity: 0.78;
+  --accent: #ed1c24;
+  --accent-bright: #ff6a00;
+  --accent-deep: #a31217;
 }
 body:has(.shell[data-platform="nvidia-spark"]) {
   --platform-tint: rgba(118, 185, 0, 0.78);
   --platform-tint-opacity: 0.78;
+  --accent: #76b900;
+  --accent-bright: #8fd400;
+  --accent-deep: #5a8c00;
 }
 #root { position: relative; z-index: 1; }
 
 .shell {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
   padding: 20px 26px 26px;
   gap: 18px;
+}
+
+/* A soft accent aurora above the stage, drifting slowly. It is the one piece of
+   the scene that carries full-saturation brand color, so the whole window
+   recolors with the platform without swapping any artwork. */
+.shell::before {
+  content: "";
+  position: fixed;
+  inset: -22% -10% auto -10%;
+  height: 80vh;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(50% 50% at 50% 40%, var(--accent), transparent 68%);
+  opacity: 0.3;
+  filter: blur(70px);
+  transition: background 0.32s ease;
+  animation: aurora-drift 26s ease-in-out infinite alternate;
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -107,10 +172,28 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   -webkit-app-region: drag;
 }
 
-.brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark { display: block; object-fit: contain; }
-.brand h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.2px; }
-.brand .sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.brand { display: flex; align-items: center; gap: 13px; }
+.brand-mark {
+  display: block;
+  object-fit: contain;
+  border-radius: 11px;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 42%, transparent));
+  transition: filter 0.32s ease;
+}
+.brand h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.brand .sub {
+  margin: 3px 0 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.36px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
 
 .titlebar-end { display: flex; align-items: center; gap: 18px; }
 
@@ -134,11 +217,11 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   transition: color 0.16s ease, background-color 0.16s ease;
 }
 .window-controls button:hover { color: var(--text); background: rgba(255, 255, 255, 0.08); }
-.window-controls .window-close:hover { color: #fff; background: #c42b1c; }
+.window-controls .window-close:hover { color: #0a0a0a; background: var(--danger); }
 .window-controls button:focus-visible {
   position: relative;
   z-index: 1;
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--accent-bright);
   outline-offset: -3px;
 }
 .window-controls svg {
@@ -165,14 +248,16 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   place-items: center;
   font-size: 12px;
   color: var(--muted);
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-fill);
+  transition: color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 .steps li.active {
   color: #0a0a0a;
-  background: linear-gradient(135deg, var(--amd), var(--amber));
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent) 45%, var(--accent-bright));
   border-color: transparent;
   font-weight: 700;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 /* ── Panels (frosted glass) ─────────────────────────────────── */
@@ -181,19 +266,35 @@ body:has(.shell[data-platform="nvidia-spark"]) {
 
 .panel {
   width: min(720px, 100%);
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 52%),
+    var(--glass-fill);
+  border: 1px solid var(--glass-border);
   border-radius: 18px;
   padding: 26px 28px;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px) saturate(1.2);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2);
   box-shadow:
-    inset 0 1px 0 var(--panel-highlight),
-    0 24px 60px rgba(0, 0, 0, 0.45);
+    inset 0 1px 0 var(--glass-highlight),
+    var(--glass-shadow);
+  animation: panel-in 0.36s var(--ease) both;
+}
+@supports not ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  .panel { background: var(--surface); }
 }
 
-.panel h2 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
-.hint { color: var(--muted); font-size: 13px; line-height: 1.5; }
+@keyframes panel-in {
+  from { opacity: 0; transform: translate3d(0, 12px, 0); }
+  to { opacity: 1; transform: none; }
+}
+
+.panel h2 {
+  margin: 0 0 6px;
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+.hint { color: var(--muted); font-size: 13px; line-height: 1.55; }
 
 /* ── Platform cards ─────────────────────────────────────────── */
 
@@ -211,32 +312,40 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   gap: 7px;
   padding: 20px;
   border-radius: 14px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-fill);
   color: var(--text);
   font-family: inherit;
   font-size: 14px;
   text-align: left;
   cursor: pointer;
-  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
-  box-shadow: inset 0 1px 0 var(--panel-highlight);
+  transition:
+    transform 0.18s var(--ease),
+    border-color 0.18s ease,
+    background 0.18s ease,
+    box-shadow 0.18s ease;
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 .card:hover:not(:disabled), .card:focus-visible {
-  transform: translateY(-2px);
+  transform: translate3d(0, -3px, 0);
   outline: none;
 }
 .card:disabled { opacity: 0.6; cursor: wait; }
-.card strong { font-size: 17px; }
+.card strong { font-size: 17px; letter-spacing: -0.2px; }
 .card-sub { color: var(--muted); font-size: 12px; }
 .card-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
-.card-amd:hover:not(:disabled), .card-amd:focus-visible {
-  border-color: rgba(237, 28, 36, 0.65);
-  background: linear-gradient(160deg, rgba(237, 28, 36, 0.16), rgba(255, 160, 47, 0.07)), var(--panel);
-}
+.card-amd:hover:not(:disabled), .card-amd:focus-visible,
 .card-nvidia:hover:not(:disabled), .card-nvidia:focus-visible {
-  border-color: rgba(118, 185, 0, 0.65);
-  background: linear-gradient(160deg, rgba(118, 185, 0, 0.14), rgba(118, 185, 0, 0.04)), var(--panel);
+  border-color: color-mix(in srgb, var(--accent) 62%, transparent);
+  background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--accent) 18%, transparent),
+      color-mix(in srgb, var(--accent-bright) 6%, transparent) 70%),
+    var(--glass-fill);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 14px 34px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .chip {
@@ -246,17 +355,22 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   text-transform: uppercase;
   padding: 3px 9px;
   border-radius: 999px;
+  border: 1px solid transparent;
 }
 .chip.inline { margin-left: 8px; vertical-align: middle; }
 .chip-stable { background: rgba(34, 197, 94, 0.16); color: var(--ok); }
-.chip-exp { background: rgba(118, 185, 0, 0.18); color: var(--nvidia); }
+.chip-exp {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--glass-border);
+  color: var(--muted);
+}
 
 /* ── Local image picker ─────────────────────────────────────── */
 
 .local-image {
   margin-top: 18px;
   padding-top: 16px;
-  border-top: 1px solid var(--panel-border);
+  border-top: 1px solid var(--border);
 }
 .local-image-lead { margin: 0 0 10px; }
 .local-image-details {
@@ -265,9 +379,9 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   gap: 8px;
   padding: 14px;
   border-radius: 12px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
-  box-shadow: inset 0 1px 0 var(--panel-highlight);
+  border: 1px solid var(--glass-border);
+  background: rgba(26, 26, 26, 0.6);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
 }
 .local-image-file {
   display: flex;
@@ -298,19 +412,22 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   gap: 3px;
   padding: 12px 16px;
   border-radius: 12px;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
+  border: 1px solid var(--glass-border);
+  background: var(--glass-fill);
   color: var(--text);
   font-family: inherit;
   font-size: 13px;
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
 }
 .drive span { color: var(--muted); font-size: 12px; }
 .drive .mounts { font-size: 11px; }
+.drive:hover:not(.selected) { border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .drive.selected, .drive:focus-visible {
-  border-color: var(--amber);
-  background: linear-gradient(160deg, rgba(255, 160, 47, 0.12), transparent), var(--panel);
+  border-color: var(--accent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--accent) 14%, transparent), transparent), var(--glass-fill);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
   outline: none;
 }
 .drive-scan-notice,
@@ -340,31 +457,45 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   font-size: 13px;
   line-height: 1.55;
 }
-.warn-box.elev { border-color: rgba(255, 160, 47, 0.5); background: rgba(255, 160, 47, 0.08); }
+.warn-box.elev {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
 .warn-box p { margin: 0 0 8px; }
 .warn-box p:last-child { margin-bottom: 0; }
 .drive-permission { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .drive-permission strong { display: block; margin-bottom: 3px; }
 
 .confirm-label { display: block; margin: 16px 0 8px; font-size: 13px; color: var(--muted); }
-.confirm-label code { color: var(--amber); user-select: text; }
+.confirm-label code { color: var(--accent-bright); user-select: text; }
 .confirm-input {
   width: 100%;
   padding: 11px 14px;
   border-radius: 10px;
-  border: 1px solid var(--panel-border);
-  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.42);
   color: var(--text);
-  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
-.confirm-input:focus { outline: none; border-color: var(--danger); }
+.confirm-input:focus {
+  outline: none;
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(255, 77, 79, 0.16);
+}
+.local-sha-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 
 /* ── Buttons ────────────────────────────────────────────────── */
 
 .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 
 .primary, .danger, .ghost {
+  position: relative;
+  overflow: hidden;
   padding: 10px 22px;
   border-radius: 10px;
   font-family: inherit;
@@ -372,21 +503,45 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   font-weight: 600;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: filter 0.12s ease, transform 0.12s ease;
+  transition: filter 0.16s ease, transform 0.16s var(--ease), box-shadow 0.16s ease;
 }
 .primary {
-  background: linear-gradient(135deg, var(--amd), var(--amber));
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent) 42%, var(--accent-bright));
   color: #0a0a0a;
+  box-shadow: 0 6px 20px color-mix(in srgb, var(--accent) 28%, transparent);
 }
-.danger { background: var(--danger); color: #14060a; }
-.ghost { background: transparent; color: var(--text); border-color: var(--panel-border); }
+/* Sheen sweep on hover — transform-only so it stays on the compositor. */
+.primary::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+  opacity: 0;
+  pointer-events: none;
+}
+.primary:hover:not(:disabled)::after {
+  opacity: 1;
+  animation: sheen 0.72s var(--ease);
+}
+@keyframes sheen {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(360%, 0, 0); }
+}
+.danger {
+  background: var(--danger);
+  color: #0a0a0a;
+  box-shadow: 0 6px 20px rgba(255, 77, 79, 0.26);
+}
+.ghost { background: transparent; color: var(--text); border-color: var(--glass-border); }
+.ghost:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 45%, var(--glass-border)); }
 .primary:hover:not(:disabled), .danger:hover:not(:disabled), .ghost:hover:not(:disabled) {
-  filter: brightness(1.1);
-  transform: translateY(-1px);
+  filter: brightness(1.08);
+  transform: translate3d(0, -1px, 0);
 }
-.primary:disabled, .danger:disabled { opacity: 0.4; cursor: not-allowed; }
+.primary:disabled, .danger:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
 .primary:focus-visible, .danger:focus-visible, .ghost:focus-visible {
-  outline: 2px solid var(--amber);
+  outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
 }
 
@@ -398,29 +553,52 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   color: var(--muted);
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--glass-border);
+  transition: color 0.2s ease, background 0.2s ease;
 }
 .phase.active {
   color: #0a0a0a;
-  background: linear-gradient(135deg, var(--amd), var(--amber));
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent) 45%, var(--accent-bright));
   border-color: transparent;
   font-weight: 700;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .bar {
   height: 10px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.06);
   overflow: hidden;
-  border: 1px solid var(--panel-border);
+  border: 1px solid var(--border);
 }
 .bar-fill {
+  position: relative;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(90deg, var(--amd), var(--amber));
+  overflow: hidden;
+  background: linear-gradient(90deg, var(--accent-deep), var(--accent) 55%, var(--accent-bright));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
   transition: width 0.25s ease;
 }
-.progress-detail { margin: 10px 0 4px; font-size: 13px; color: var(--text); }
+/* Travelling highlight so a long write still reads as "working". */
+.bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -40%;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  animation: bar-shimmer 1.6s linear infinite;
+}
+@keyframes bar-shimmer {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(350%, 0, 0); }
+}
+.progress-detail {
+  margin: 12px 0 4px;
+  font-size: 13px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ── Done ───────────────────────────────────────────────────── */
 
@@ -433,8 +611,9 @@ body:has(.shell[data-platform="nvidia-spark"]) {
   display: grid;
   place-items: center;
   font-size: 26px;
-  color: #06130a;
+  color: #0a0a0a;
   background: var(--ok);
+  box-shadow: 0 0 26px rgba(34, 197, 94, 0.4);
 }
 .done .actions { justify-content: center; }
 
