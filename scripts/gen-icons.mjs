@@ -3,13 +3,17 @@
 // Copyright (c) 2026 Doubling Technologies (DoubTech.ai). Use of this file is
 // governed by the LICENSE file in the repository root.
 //
-// Scales build/icon-source.png (the approved artwork copied from the Llama
-// Manager favicon set) into the platform icon set electron-builder consumes:
-// build/icon.png (512px, Linux AppImage), build/icon.ico (Windows), and
-// build/icon.icns (macOS). Uses @resvg/resvg-js for high-quality scaling and
-// png2icons for the container formats — no network access. The generated icons
-// are committed so CI and fresh clones never need to regenerate them; rerun
-// `pnpm gen-icons` after replacing icon-source.png with approved artwork.
+// Scales build/icon-source.png into the platform icon set electron-builder
+// consumes: build/icon.png (512px, Linux AppImage), build/icon.ico (Windows),
+// and build/icon.icns (macOS). Uses @resvg/resvg-js for high-quality scaling
+// and png2icons for the container formats — no network access.
+//
+// icon-source.png is a 1024px downscale of the Llama Manager `generic`
+// app-icon brand slot, vendored into this repo on purpose: the flasher must
+// build standalone, so no step here or in the packaging config may reach
+// outside it for artwork. Re-vendor that file (and rerun `pnpm gen-icons`)
+// when the brand asset set changes. The generated icons are committed so CI
+// and fresh clones never need to regenerate them.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
