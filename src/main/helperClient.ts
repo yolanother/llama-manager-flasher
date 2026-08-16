@@ -160,6 +160,13 @@ export class HelperClient {
         reject(new Error('timed out waiting for the elevated helper'));
       }, timeoutMs);
       this.onConnect = () => { done(); resolve(); };
+      // An unlistened 'error' (spawn ENOENT: the interpreter is not on PATH)
+      // is rethrown by Node as an uncaught exception and kills the main
+      // process, so surface it as a launch failure instead.
+      this.child?.once('error', (err: Error) => {
+        done();
+        reject(new Error(`the elevated helper could not be started: ${err.message}`));
+      });
       this.child?.once('exit', () => {
         if (!this.isConnected()) {
           done();
