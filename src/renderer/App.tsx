@@ -4,8 +4,10 @@
 // governed by the LICENSE file in the repository root.
 //
 // Implements the five-step flashing wizard: platform select (AMD stable /
-// NVIDIA Spark EXPERIMENTAL) → target-drive picker (manual and automatic
-// rescans, removable-only list served by the main process) → destructive confirmation
+// NVIDIA Spark EXPERIMENTAL, or an already-downloaded local image whose pasted
+// SHA-256 is checked interactively the moment a complete digest is entered, so
+// the user sees a checkmark before committing) → target-drive picker (manual and
+// automatic rescans, removable-only list served by the main process) → destructive confirmation
 // (the user must type the device path) → download + flash + verify progress
 // → done. Privileged device writes run in a separate elevated helper process;
 // this component sequences IPC calls, renders progress, and surfaces an in-place
@@ -232,6 +234,107 @@ export function isLocalImage(image: ApplianceImage | LocalImage | null): image i
   return image != null && 'kind' in image && image.kind === 'local';
 }
 
+/** State of the interactive pre-write checksum check for a local image. */
+export type LocalShaStatus =
+  | { state: 'idle' }
+  | { state: 'checking'; bytes: number; total: number }
+  | { state: 'valid' }
+  | { state: 'mismatch'; actual: string }
+  | { state: 'error'; message: string };
+
+/** A complete lowercase/uppercase hex SHA-256, and nothing shorter or longer. */
+const SHA256_RE = /^[0-9a-f]{64}$/i;
+
+/**
+ * Decides whether a pasted checksum is worth hashing the file for.
+ *
+ * Paste is the primary input path, so the check fires on a complete digest
+ * alone — no blur, no Enter, and nothing while the user is still typing.
+ *
+ * @param path - Absolute path of the chosen image, or '' when none is chosen.
+ * @param sha - Raw contents of the expected-SHA-256 field.
+ * @returns True when a verification should start for this (path, sha) pair.
+ */
+export function shouldCheckLocalSha(path: string, sha: string): boolean {
+  return path !== '' && SHA256_RE.test(sha.trim());
+}
+
+/**
+ * Runs one interactive checksum check and applies its outcome only while it is
+ * still the newest request.
+ *
+ * Hashing a 15 GB image takes minutes, during which the user may edit the sha,
+ * pick another file, or clear the selection. A result that arrives after any of
+ * those must be dropped — otherwise a stale success would mark a *different*
+ * input as verified, which is exactly the mistake that puts a bad image on a
+ * USB stick.
+ *
+ * @param run - Starts the check (typically the checkLocal IPC call).
+ * @param isCurrent - Returns false once this request has been superseded.
+ * @param apply - Commits the resulting status to component state.
+ */
+export async function applyLocalShaCheck(
+  run: () => Promise<LocalImageCheck>,
+  isCurrent: () => boolean,
+  apply: (status: LocalShaStatus) => void,
+): Promise<void> {
+  let result: LocalImageCheck;
+  try {
+    result = await run();
+  } catch (e) {
+    if (!isCurrent()) return;
+    apply({ state: 'error', message: e instanceof Error ? e.message : String(e) });
+    return;
+  }
+  if (!isCurrent()) return;
+  if (result.error != null) apply({ state: 'error', message: result.error });
+  else if (result.ok) apply({ state: 'valid' });
+  else apply({ state: 'mismatch', actual: result.actual });
+}
+
+/**
+ * Renders the outcome of the interactive checksum check.
+ *
+ * The checkmark is decorative (aria-hidden); the live region's text is the
+ * actual status, so the state is never conveyed by glyph or colour alone.
+ *
+ * @param status - Current check state.
+ * @returns The status line, or null while idle.
+ */
+function LocalShaStatusLine({ status }: { status: LocalShaStatus }): JSX.Element | null {
+  if (status.state === 'idle') return null;
+  return (
+    <p className={`local-sha-status local-sha-status-${status.state}`} role="status" aria-live="polite">
+      {status.state === 'checking' && (
+        <>
+          <span className="local-sha-glyph" aria-hidden="true">⏳</span>
+          {status.total > 0
+            ? `Verifying checksum… ${fmtBytes(status.bytes)} of ${fmtBytes(status.total)}`
+            : 'Verifying checksum…'}
+        </>
+      )}
+      {status.state === 'valid' && (
+        <>
+          <span className="local-sha-glyph" aria-hidden="true">✓</span>
+          Checksum matches — this image is intact.
+        </>
+      )}
+      {status.state === 'mismatch' && (
+        <>
+          <span className="local-sha-glyph" aria-hidden="true">✕</span>
+          Checksum does not match. This file is <code>{status.actual}</code>.
+        </>
+      )}
+      {status.state === 'error' && (
+        <>
+          <span className="local-sha-glyph" aria-hidden="true">⚠</span>
+          Could not read the file: {status.message}
+        </>
+      )}
+    </p>
+  );
+}
+
 /** Props for the platform-page "flash an already-downloaded image" affordance. */
 interface LocalImagePickerProps {
   /** The chosen file, or null before one is picked. */
@@ -240,6 +343,8 @@ interface LocalImagePickerProps {
   sha: string;
   /** True while a platform manifest or file dialog is resolving. */
   busy: boolean;
+  /** Outcome of the interactive check of `sha` against the chosen file. */
+  status: LocalShaStatus;
   /** Opens the native file picker. */
   onChoose: () => void;
   /** Updates the optional expected-checksum field. */
@@ -260,6 +365,7 @@ export function LocalImagePicker({
   selection,
   sha,
   busy,
+  status,
   onChoose,
   onShaChange,
   onClear,
@@ -290,6 +396,7 @@ export function LocalImagePicker({
             spellCheck={false}
             autoComplete="off"
           />
+          <LocalShaStatusLine status={status} />
           <div className="actions">
             <button type="button" className="ghost" onClick={onClear}>Choose a different file</button>
             <button type="button" className="primary" onClick={onContinue}>Continue</button>
@@ -306,6 +413,7 @@ export default function App(): JSX.Element {
   const [manifestLoading, setManifestLoading] = useState<'amd' | 'nvidia-spark' | null>(null);
   const [localSelection, setLocalSelection] = useState<LocalImageSelection | null>(null);
   const [localSha, setLocalSha] = useState('');
+  const [localShaStatus, setLocalShaStatus] = useState<LocalShaStatus>({ state: 'idle' });
   const [choosingImage, setChoosingImage] = useState(false);
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [drive, setDrive] = useState<DriveInfo | null>(null);
@@ -322,6 +430,7 @@ export default function App(): JSX.Element {
   const [version, setVersion] = useState('');
   const flashing = useRef(false);
   const scanSequence = useRef(0);
+  const shaCheckSequence = useRef(0);
 
   useEffect(() => {
     void window.llamaFlasher.appInfo().then((i) => setVersion(i.version));
@@ -402,6 +511,31 @@ export default function App(): JSX.Element {
     setLocalSelection(null);
     setLocalSha('');
   }, []);
+
+  // Interactive pre-check: the moment a complete sha is pasted for a chosen
+  // file, hash it and report whether it matches. Keyed on primitives so a
+  // re-render never re-hashes the same (path, sha) pair, and every run bumps a
+  // ref-held token so a slow result can never be applied to a newer input.
+  const localPath = localSelection?.path ?? '';
+  const normalizedSha = localSha.trim().toLowerCase();
+  useEffect(() => {
+    const token = ++shaCheckSequence.current;
+    if (!shouldCheckLocalSha(localPath, normalizedSha)) {
+      setLocalShaStatus({ state: 'idle' });
+      return;
+    }
+    setLocalShaStatus({ state: 'checking', bytes: 0, total: 0 });
+    const off = window.llamaFlasher.image.onCheckProgress((p) => {
+      if (p.token !== token) return;
+      setLocalShaStatus({ state: 'checking', bytes: p.bytes, total: p.total });
+    });
+    void applyLocalShaCheck(
+      () => window.llamaFlasher.image.checkLocal({ path: localPath, sha256: normalizedSha, token }),
+      () => shaCheckSequence.current === token,
+      setLocalShaStatus,
+    );
+    return off;
+  }, [localPath, normalizedSha]);
 
   // Promotes the chosen file to the active image and enters the drive picker,
   // reusing the same destructive-confirmation flow as a downloaded image.
@@ -584,6 +718,7 @@ export default function App(): JSX.Element {
               selection={localSelection}
               sha={localSha}
               busy={manifestLoading != null || choosingImage}
+              status={localShaStatus}
               onChoose={() => void chooseLocalImage()}
               onShaChange={setLocalSha}
               onClear={clearLocalImage}

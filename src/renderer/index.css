@@ -394,6 +394,20 @@ body:has(.shell[data-platform="nvidia-spark"]) {
 .local-sha-label { display: block; margin-top: 4px; font-size: 13px; color: var(--muted); }
 .local-sha-optional { opacity: 0.7; }
 .local-sha-input { font-size: 12.5px; }
+.local-sha-status {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+  word-break: break-all;
+}
+.local-sha-status code { font-family: var(--font-mono); font-size: 11.5px; }
+.local-sha-glyph { flex: none; font-size: 13px; }
+.local-sha-status-valid { color: var(--ok); font-weight: 600; }
+.local-sha-status-mismatch { color: var(--danger); }
 .local-image-details .actions { margin-top: 6px; }
 
 /* ── Drive picker ───────────────────────────────────────────── */

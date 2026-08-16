@@ -226,6 +226,37 @@ const helperNode = resolveHelperNode();
   // module's streaming hash and reports a single verifying event so the renderer
   // can surface the "Verifying checksum" phase. Throws on mismatch so a bad file
   // never reaches the writer.
+  // Interactive, non-throwing pre-check for the sha the user pastes into the
+  // picker. Deliberately SEPARATE from image:verifyLocal: this one reports a
+  // result the UI can render (matched / mismatched / unreadable) and streams
+  // hash progress, while verifyLocal stays the throwing gate that runs again
+  // immediately before the write. `token` is echoed back on every progress
+  // event so the renderer can ignore events from a superseded check.
+  ipcMain.handle('image:checkLocal', async (
+    event,
+    args: { path: string; sha256: string; token: number },
+  ): Promise<{ ok: boolean; actual: string; error: string | null }> => {
+    const expected = args.sha256.trim().toLowerCase();
+    try {
+      const total = (await fs.stat(args.path)).size;
+      let lastSent = 0;
+      const actual = (await sha256File(args.path, (bytes) => {
+        // Throttle: a 15 GB file yields ~240k chunks; one IPC message each
+        // would flood the renderer.
+        const now = Date.now();
+        if (now - lastSent < 200) return;
+        lastSent = now;
+        event.sender.send('image:check:progress', { token: args.token, bytes, total });
+      })).toLowerCase();
+      event.sender.send('image:check:progress', { token: args.token, bytes: total, total });
+      return { ok: actual === expected, actual, error: null };
+    } catch (e) {
+      // A file we cannot read is NOT a mismatch — say so, so the user is not
+      // told their image is corrupt when it is really a permissions problem.
+      return { ok: false, actual: '', error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   ipcMain.handle('image:verifyLocal', async (event, args: { path: string; sha256: string }): Promise<string> => {
     const expected = args.sha256.trim().toLowerCase();
     const st = await fs.stat(args.path);
