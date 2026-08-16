@@ -1,5 +1,6 @@
 // tests/helperClient.test.ts
 import net from 'node:net';
+import { EventEmitter } from 'node:events';
 import { describe, expect, it, afterEach } from 'vitest';
 import { HelperClient } from '../src/main/helperClient';
 import { encodeMessage, createFramer } from '../src/shared/helperProtocol';
@@ -53,5 +54,20 @@ describe('HelperClient', () => {
     const p2 = client.ensure('exe', ['helper.js'], undefined, 300).catch(() => {});
     await Promise.all([p1, p2]);
     expect(spawns).toBe(1);
+  });
+
+  it('rejects ensure() when the spawn itself fails (ENOENT) instead of throwing', async () => {
+    const child = new EventEmitter() as any;
+    child.kill = () => {};
+    child.exitCode = null;
+    const fakeSpawn = ((command: string) => {
+      setTimeout(() => {
+        child.emit('error', Object.assign(new Error(`spawn ${command} ENOENT`), { code: 'ENOENT' }));
+      }, 0);
+      return child;
+    }) as any;
+    client = new HelperClient(fakeSpawn);
+    await expect(client.ensure('powershell.exe', ['helper.js'], undefined, 2000))
+      .rejects.toThrow(/ENOENT/);
   });
 });
