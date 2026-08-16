@@ -70,6 +70,29 @@ interface DownloadProgress {
   attempt?: number;
 }
 
+/**
+ * Outcome of the interactive, non-throwing local-image checksum pre-check.
+ *
+ * `ok` is only meaningful when `error` is null: an unreadable file reports
+ * `ok: false` with a message, which the UI must NOT present as a mismatch.
+ */
+interface LocalImageCheck {
+  /** True when the file's digest equals the expected one. */
+  ok: boolean;
+  /** The file's actual lowercase-hex digest, or '' when it could not be read. */
+  actual: string;
+  /** Read/IO failure message, or null when the file was hashed successfully. */
+  error: string | null;
+}
+
+/** Hash progress for one interactive pre-check, tagged with its request token. */
+interface LocalImageCheckProgress {
+  /** Token of the check this event belongs to; stale tokens must be ignored. */
+  token: number;
+  bytes: number;
+  total: number;
+}
+
 /** Flash progress event forwarded from the main process. */
 interface FlashProgress {
   phase: string;
@@ -106,6 +129,8 @@ interface LlamaFlasherBridge {
     download(args: { url: string; file: string; sha256: string; size: number | null }): Promise<string>;
     choose(): Promise<LocalImageSelection | null>;
     verifyLocal(args: { path: string; sha256: string }): Promise<string>;
+    checkLocal(args: { path: string; sha256: string; token: number }): Promise<LocalImageCheck>;
+    onCheckProgress(cb: (p: LocalImageCheckProgress) => void): () => void;
     onProgress(cb: (p: DownloadProgress) => void): () => void;
   };
   flash: {

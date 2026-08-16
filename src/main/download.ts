@@ -29,12 +29,30 @@ const MAX_ATTEMPTS = 3;
 /**
  * Computes the SHA-256 of a file on disk as lowercase hex.
  *
+ * Hashing a ~15 GB appliance image takes minutes, so callers that surface the
+ * work in a UI may pass `onProgress` to observe real progress. It is invoked
+ * once per read-stream chunk with the cumulative byte count — callers that
+ * forward those over IPC are responsible for throttling.
+ *
  * @param p - Path of the file to hash.
+ * @param onProgress - Optional cumulative-bytes-read callback.
  * @returns The lowercase hex digest.
+ * @throws When the file cannot be opened or read.
  */
-export async function sha256File(p: string): Promise<string> {
+export async function sha256File(p: string, onProgress?: (bytesRead: number) => void): Promise<string> {
   const h = createHash('sha256');
-  await pipeline(createReadStream(p), h);
+  if (!onProgress) {
+    await pipeline(createReadStream(p), h);
+    return h.digest('hex');
+  }
+  // Async iteration rather than a 'data' listener on a piped stream: that would
+  // flip the stream into flowing mode and race the pipeline's own reads.
+  let read = 0;
+  for await (const chunk of createReadStream(p)) {
+    h.update(chunk as Buffer);
+    read += (chunk as Buffer).length;
+    onProgress(read);
+  }
   return h.digest('hex');
 }
 

@@ -55,6 +55,20 @@ interface DownloadProgress {
   attempt?: number;
 }
 
+/** Outcome of the interactive, non-throwing local-image checksum pre-check. */
+interface LocalImageCheck {
+  ok: boolean;
+  actual: string;
+  error: string | null;
+}
+
+/** Hash progress for one interactive pre-check, tagged with its request token. */
+interface LocalImageCheckProgress {
+  token: number;
+  bytes: number;
+  total: number;
+}
+
 /** Flash progress event forwarded from the main process. */
 interface FlashProgress {
   phase: string;
@@ -95,6 +109,13 @@ const api = {
       ipcRenderer.invoke('image:choose'),
     verifyLocal: (args: { path: string; sha256: string }): Promise<string> =>
       ipcRenderer.invoke('image:verifyLocal', args),
+    checkLocal: (args: { path: string; sha256: string; token: number }): Promise<LocalImageCheck> =>
+      ipcRenderer.invoke('image:checkLocal', args),
+    onCheckProgress: (cb: (p: LocalImageCheckProgress) => void) => {
+      const handler = (_e: unknown, p: LocalImageCheckProgress) => cb(p);
+      ipcRenderer.on('image:check:progress', handler);
+      return () => ipcRenderer.off('image:check:progress', handler);
+    },
     onProgress: (cb: (p: DownloadProgress) => void) => {
       const handler = (_e: unknown, p: DownloadProgress) => cb(p);
       ipcRenderer.on('image:download:progress', handler);
