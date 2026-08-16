@@ -1,0 +1,29 @@
+# Llama Manager Flasher — line-ending normalization.
+#
+# This repository is built on linux, mac, AND windows CI nodes from the same
+# commit, so a file's bytes must not depend on which platform checked it out.
+# Without this, git hands a Windows node CRLF and any test that compares file
+# CONTENT against a literal fails there and only there — tests/theme.test.ts
+# matches multi-line CSS selector lists, and its windows job failed with
+# "no rule for selector: body:has(.card-amd:hover),..." while linux and mac
+# passed.
+#
+# eol=lf checks every text file out with LF everywhere. Nothing here needs CRLF
+# (the repo ships no .bat/.cmd/.ps1), and binary assets are excluded so they are
+# never munged.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.gz binary
+*.exe binary
+*.dmg binary
+*.AppImage binary

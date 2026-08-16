@@ -16,7 +16,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const css = readFileSync(path.join(root, 'src/renderer/index.css'), 'utf8');
+// Newlines are normalized because the assertions below match selector lists
+// that span lines. A CRLF checkout (git's default on Windows) would otherwise
+// make every multi-line selector unfindable while single-line ones still match,
+// which is exactly how this file passed on linux/mac and failed on the windows
+// CI node. .gitattributes now pins LF at checkout; this keeps the test correct
+// even in a working tree that predates it.
+const css = readFileSync(path.join(root, 'src/renderer/index.css'), 'utf8').replace(
+  /\r\n/g,
+  '\n',
+);
 
 /** Structural tokens shared by every platform theme (see docs/THEMING.md). */
 const STRUCTURAL = ['#0a0a0a', '#141414', '#1a1a1a', '#ffffff', '#a3a3a3', '#2a2a2a'];
