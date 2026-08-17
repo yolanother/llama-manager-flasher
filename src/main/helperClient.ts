@@ -137,7 +137,7 @@ export class HelperClient {
       const tokenFile = path.join(dir, 'token');
       await fs.writeFile(tokenFile, this.token, { mode: 0o600 });
       const plan: HelperLaunchPlan = buildHelperLaunch(process.platform, {
-        execPath, baseArgs, port, tokenFile, cwd,
+        execPath, baseArgs, port, tokenFile,
       });
       try {
         this.child = this.spawnFn(plan.command, plan.args, { detached: false, stdio: 'ignore', cwd });

@@ -4,71 +4,48 @@
 // governed by the LICENSE file in the repository root.
 //
 // Locks the command buildHelperLaunch produces to spawn the headless helper:
-// Windows RunAs (with -Wait so the launcher can detect denial), Linux pkexec,
-// macOS direct/unprivileged. Also pins how PowerShell is resolved on Windows —
-// an absolute SystemRoot/windir path rather than a bare name, so a short PATH
-// cannot make the spawn fail with ENOENT.
+// Windows spawns the interpreter DIRECTLY (the app itself is manifest-elevated,
+// so the helper inherits the admin token — no PowerShell, no Start-Process
+// RunAs), Linux pkexec, macOS direct/unprivileged. The win32 cases include an
+// explicit regression guard that no PowerShell/RunAs machinery reappears: that
+// external dependency broke drive scanning on machines without powershell.exe.
+// Also covers resolveHelperNode's precedence: env override, bundled node.exe
+// (packaged and dev layouts), system node, bare name.
 
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildHelperLaunch } from '../src/main/elevation.js';
+import { buildHelperLaunch, resolveHelperNode } from '../src/main/elevation.js';
 
 const tokenFile = 'C:\\tmp\\tok.txt';
 
 describe('buildHelperLaunch', () => {
-  it('win32: RunAs directly via powershell, no wrapper script', () => {
-    const execPath = 'C:\\app\\app.exe';
-    const baseArgs = ['C:\\app\\app.exe', '--helper'];
-    const env = { SystemRoot: 'C:\\WINDOWS' };
-    const plan = buildHelperLaunch('win32', { execPath, baseArgs, port: 51515, tokenFile, env });
-    expect(plan.command).toBe('C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
+  it('win32: spawns the interpreter directly with the helper args', () => {
+    const execPath = 'C:\\app\\resources\\node.exe';
+    const baseArgs = ['C:\\app\\resources\\app.asar\\dist\\helper\\index.js'];
+    const plan = buildHelperLaunch('win32', { execPath, baseArgs, port: 51515, tokenFile });
+    expect(plan.command).toBe(execPath);
+    expect(plan.args).toEqual([...baseArgs, '--port', '51515', '--token-file', tokenFile]);
+    // The app is elevated by its manifest, so the child inherits admin.
     expect(plan.elevated).toBe(true);
-    const argsStr = plan.args.join(' ');
-    expect(argsStr).toContain('Start-Process');
-    expect(argsStr).toContain('-Verb RunAs');
-    expect(argsStr).toContain('-Wait');
-    expect(argsStr).toContain('--helper');
-    expect(argsStr).toContain('--port');
-    expect(argsStr).toContain('51515');
-    expect(argsStr).toContain(tokenFile.replace(/'/g, "''"));
-    expect((plan as Record<string, unknown>)['wrapperScript']).toBeUndefined();
   });
 
-  it('win32: falls back to windir when SystemRoot is unset', () => {
+  it('win32: never touches PowerShell, Start-Process or RunAs', () => {
     const plan = buildHelperLaunch('win32', {
-      execPath: 'C:\\app\\app.exe',
-      baseArgs: ['C:\\app\\app.exe', '--helper'],
+      execPath: 'C:\\app\\node.exe',
+      baseArgs: ['C:\\app\\helper.js'],
       port: 51515,
       tokenFile,
-      env: { windir: 'D:\\Windows' },
     });
-    expect(plan.command).toBe('D:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe');
-  });
-
-  it('win32: falls back to the bare powershell.exe name when neither root is set', () => {
-    const plan = buildHelperLaunch('win32', {
-      execPath: 'C:\\app\\app.exe',
-      baseArgs: ['C:\\app\\app.exe', '--helper'],
-      port: 51515,
-      tokenFile,
-      env: {},
-    });
-    expect(plan.command).toBe('powershell.exe');
-  });
-
-  it('win32: never uses Sysnative — the app ships x64', () => {
-    const plan = buildHelperLaunch('win32', {
-      execPath: 'C:\\app\\app.exe',
-      baseArgs: ['C:\\app\\app.exe', '--helper'],
-      port: 51515,
-      tokenFile,
-      env: { SystemRoot: 'C:\\WINDOWS', windir: 'C:\\WINDOWS' },
-    });
-    expect(plan.command).not.toContain('Sysnative');
+    const all = [plan.command, ...plan.args].join(' ').toLowerCase();
+    expect(all).not.toContain('powershell');
+    expect(all).not.toContain('start-process');
+    expect(all).not.toContain('runas');
+    expect(all).not.toContain('system32');
   });
 
   it('linux: pkexec with execPath and baseArgs directly, no env wrapper', () => {
-    const execPath = '/opt/app/electron';
-    const baseArgs = ['/opt/app/electron', '--helper'];
+    const execPath = '/usr/bin/node';
+    const baseArgs = ['/opt/app/helper.js'];
     const plan = buildHelperLaunch('linux', { execPath, baseArgs, port: 51515, tokenFile: '/tmp/tok.txt' });
     expect(plan.command).toBe('pkexec');
     expect(plan.elevated).toBe(true);
@@ -78,14 +55,95 @@ describe('buildHelperLaunch', () => {
   });
 
   it('darwin: spawn directly, unprivileged, no ELECTRON_RUN_AS_NODE', () => {
-    const execPath = '/App/electron';
-    const baseArgs = ['/App/electron', '--helper'];
+    const execPath = '/usr/local/bin/node';
+    const baseArgs = ['/App/helper.js'];
     const plan = buildHelperLaunch('darwin', { execPath, baseArgs, port: 51515, tokenFile: '/tmp/tok.txt' });
     expect(plan.command).toBe(execPath);
     expect(plan.elevated).toBe(false);
     expect(plan.args).toEqual([...baseArgs, '--port', '51515', '--token-file', '/tmp/tok.txt']);
     expect((plan as Record<string, unknown>)['wrapperScript']).toBeUndefined();
-    const allArgs = plan.args.join(' ');
-    expect(allArgs).not.toContain('ELECTRON_RUN_AS_NODE');
+    expect(plan.args.join(' ')).not.toContain('ELECTRON_RUN_AS_NODE');
+  });
+});
+
+describe('resolveHelperNode', () => {
+  const never = (): boolean => false;
+
+  it('LMF_HELPER_NODE overrides everything', () => {
+    const got = resolveHelperNode({
+      platform: 'win32',
+      env: { LMF_HELPER_NODE: 'D:\\my\\node.exe' },
+      resourcesPath: 'C:\\app\\resources',
+      appRoot: 'C:\\app',
+      exists: () => true,
+      systemNode: () => 'C:\\other\\node.exe',
+    });
+    expect(got).toBe('D:\\my\\node.exe');
+  });
+
+  it('win32 packaged: prefers the bundled node.exe under resourcesPath', () => {
+    // path.join uses the HOST separator, so build the expectation the same way.
+    const bundled = path.join('C:\\app\\resources', 'node.exe');
+    const got = resolveHelperNode({
+      platform: 'win32',
+      env: {},
+      resourcesPath: 'C:\\app\\resources',
+      appRoot: 'C:\\app\\resources\\app.asar',
+      exists: (p) => p === bundled,
+      systemNode: () => 'C:\\sys\\node.exe',
+    });
+    expect(got).toBe(bundled);
+  });
+
+  it('win32 dev checkout: falls back to build/win-node/node.exe under the app root', () => {
+    const dev = path.join('/repo', 'build', 'win-node', 'node.exe');
+    const got = resolveHelperNode({
+      platform: 'win32',
+      env: {},
+      resourcesPath: undefined,
+      appRoot: '/repo',
+      exists: (p) => p === dev,
+      systemNode: () => 'C:\\sys\\node.exe',
+    });
+    expect(got).toBe(dev);
+  });
+
+  it('win32: falls back to system node when the bundled copy is missing', () => {
+    const got = resolveHelperNode({
+      platform: 'win32',
+      env: {},
+      resourcesPath: 'C:\\app\\resources',
+      appRoot: 'C:\\app',
+      exists: never,
+      systemNode: () => 'C:\\sys\\node.exe',
+    });
+    expect(got).toBe('C:\\sys\\node.exe');
+  });
+
+  it('win32: falls back to the bare name when nothing else resolves', () => {
+    const got = resolveHelperNode({
+      platform: 'win32',
+      env: {},
+      appRoot: 'C:\\app',
+      exists: never,
+      systemNode: () => null,
+    });
+    expect(got).toBe('node.exe');
+  });
+
+  it('linux/darwin: never look for a bundled node.exe', () => {
+    const seen: string[] = [];
+    const got = resolveHelperNode({
+      platform: 'linux',
+      env: {},
+      resourcesPath: '/opt/app/resources',
+      appRoot: '/opt/app',
+      exists: (p) => { seen.push(p); return true; },
+      systemNode: () => '/usr/bin/node',
+    });
+    expect(got).toBe('/usr/bin/node');
+    expect(seen).toEqual([]);
+    expect(resolveHelperNode({ platform: 'darwin', env: {}, appRoot: '/A', exists: never, systemNode: () => null }))
+      .toBe('node');
   });
 });
