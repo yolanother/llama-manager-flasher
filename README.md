@@ -54,10 +54,12 @@ Llama Manager site):
 
 Raw block-device writes need elevated rights:
 
-- **Windows** — launch normally; the drive picker warns before selection when
-  administrator rights are still needed and offers **Relaunch as administrator**
-  (UAC prompt via `Start-Process -Verb RunAs`). The fresh elevated process owns
-  both the final safety scan and raw write.
+- **Windows** — the portable exe is manifest-elevated (`requireAdministrator`),
+  so Windows shows ONE UAC prompt when you launch it; approve it and everything
+  else — safety scan, raw write, verify — runs in the already-elevated process.
+  The app has **no external runtime dependencies**: it does not use PowerShell,
+  and it ships its own pinned `node.exe` (the privileged helper needs stock
+  Node, which Windows does not include), so no Node install is required.
 - **Linux** — the app offers **Relaunch elevated** through `pkexec` (polkit).
   If pkexec is unavailable, run the AppImage with
   `sudo ./LlamaManagerFlasher-linux-x86_64.AppImage --no-sandbox`.

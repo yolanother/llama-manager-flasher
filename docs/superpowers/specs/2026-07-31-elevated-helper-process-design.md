@@ -2,6 +2,18 @@
 
 Date: 2026-07-31
 
+> **Superseded in part (2026-08-16) — Windows elevation.** The Windows sections
+> below describe elevating the *helper* with PowerShell's
+> `Start-Process -Verb RunAs`. That is gone. PowerShell and an installed system
+> Node were undeclared runtime dependencies and both failed on a real operator
+> machine (`spawn ...\powershell.exe ENOENT`). The app now requests
+> `requireAdministrator` in its own manifest (plus `portable.requestExecutionLevel:
+> admin` for the portable SFX wrapper), so the whole process is elevated at
+> launch and the helper is spawned with a plain `CreateProcess` that inherits the
+> admin token — the Rufus model. The Windows build also bundles a pinned,
+> checksum-verified `node.exe` (`scripts/fetch-win-node.cjs` →
+> `win.extraResources`). Linux (`pkexec`) and macOS (`authopen`) are unchanged.
+
 ## Problem
 
 Raw block-device writes need administrator/root rights. Today the app elevates

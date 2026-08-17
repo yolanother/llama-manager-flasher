@@ -11,3 +11,6 @@ reports/
 .ci-home/
 # local pnpm store, if configured in-tree
 .pnpm-store/
+
+# pinned node.exe fetched at build time by scripts/fetch-win-node.cjs (never committed)
+build/win-node/

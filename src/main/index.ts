@@ -7,8 +7,10 @@
 // appliance release manifests, and enumerating candidate USB / microSD targets.
 // On Windows and Linux, delegates device writing to an elevated helper process.
 // The renderer never touches devices or the network directly — it talks to this
-// process through the narrow IPC surface defined in preload/index.cts. Every
-// safety rail (removable-only, 2 TiB cap, re-enumerate-and-match, typed
+// process through the narrow IPC surface defined in preload/index.cts. On
+// Windows the app itself requests administrator in its manifest and ships its
+// own pinned node.exe, so it needs neither PowerShell nor an installed Node.
+// Every safety rail (removable-only, 2 TiB cap, re-enumerate-and-match, typed
 // destructive confirmation) is enforced HERE or delegated, so a renderer bug
 // can never write to an internal disk. This is a portable one-shot tool: there
 // is deliberately no auto-updater.
@@ -16,7 +18,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { promises as fs } from 'node:fs';
-import { execSync } from 'node:child_process';
 import path from 'node:path';
 import {
   parseAmdSha256Sums,
@@ -30,7 +31,7 @@ import {
 } from '../shared/windowControls.js';
 import { downloadImage, sha256File, type DownloadProgress } from './download.js';
 import { type DriveScanResult } from './driveScanner.js';
-import { getElevationStatus } from './elevation.js';
+import { getElevationStatus, resolveHelperNode } from './elevation.js';
 import { HelperClient } from './helperClient.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -39,25 +40,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HELPER_SCRIPT = path.join(__dirname, '../helper/index.js');
 /** Directory the elevated helper runs from (so it resolves node_modules). */
 const HELPER_CWD = path.resolve(__dirname, '../..');
-
-/**
- * Resolves the system Node executable that runs the elevated helper. Electron's
- * bundled Node cannot open raw physical-drive paths on Windows (EIO), so the
- * privileged device work runs under system Node. Override with LMF_HELPER_NODE.
- *
- * @returns An absolute path to node (or a bare 'node' as a last resort).
- */
-function resolveHelperNode(): string {
-  if (process.env.LMF_HELPER_NODE) return process.env.LMF_HELPER_NODE;
-  try {
-    const cmd = process.platform === 'win32' ? 'where node' : 'command -v node';
-    const found = execSync(cmd, { encoding: 'utf8' }).split(/\r?\n/).map((l) => l.trim()).find(Boolean);
-    if (found) return found;
-  } catch {
-    /* fall through to bare name */
-  }
-  return process.platform === 'win32' ? 'node.exe' : 'node';
-}
 
 /** Renderer entry: Vite dev server in dev, built index.html in production. */
 const RENDERER_URL = process.env.VITE_DEV_SERVER_URL
@@ -107,10 +89,18 @@ function createWindow(): void {
   });
 }
 
-// ── Launcher (always unprivileged; delegates all device work to the helper) ──
+// ── Launcher (delegates all device work to the helper process) ──
+// On Windows the packaged exe is manifest-elevated, so the helper inherits
+// administrator rights from a plain spawn; on Linux the helper is raised with
+// pkexec; on macOS it stays unprivileged (authopen prompts per device).
 
 const helper = new HelperClient();
-const helperNode = resolveHelperNode();
+const helperNode = resolveHelperNode({
+  platform: process.platform,
+  env: process.env,
+  resourcesPath: process.resourcesPath,
+  appRoot: HELPER_CWD,
+});
 
   app.whenReady().then(() => {
     createWindow();

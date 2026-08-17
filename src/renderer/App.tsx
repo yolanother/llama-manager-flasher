@@ -123,9 +123,11 @@ interface DrivePermissionNoticeProps {
 }
 
 /**
- * Passive notice shown while the elevated helper is being requested. Elevation
- * is requested automatically on reaching the drive step (the OS prompt appears
- * on its own), so this only explains that prompt rather than offering a button.
+ * Passive notice shown while the privileged helper is starting. The helper is
+ * requested automatically on reaching the drive step — on Linux polkit prompts
+ * here; on Windows the app is already elevated (its manifest requests
+ * administrator at launch) so the helper starts silently — which is why this is
+ * an explanation rather than a button.
  * Hidden on platforms that need no up-front elevation and once the helper is
  * connected.
  *
@@ -138,7 +140,7 @@ export function DrivePermissionNotice({ elevation }: DrivePermissionNoticeProps)
     <div className="warn-box elev drive-permission" role="status" aria-live="polite">
       <div>
         <strong>Requesting administrator access…</strong>
-        <p>Approve the Windows prompt so the flasher can scan and write your drive. This window stays open.</p>
+        <p>Starting the privileged helper so the flasher can scan and write your drive. Approve the system prompt if one appears. This window stays open.</p>
       </div>
       {elevation.manualHint && <p className="hint">{elevation.manualHint}</p>}
     </div>
